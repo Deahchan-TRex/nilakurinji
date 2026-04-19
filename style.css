@@ -590,6 +590,59 @@ body {
 }
 .death-box .revive-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ──────────────────────────────────────
+   TALK 모달 (대화 주제 선택)
+   ────────────────────────────────────── */
+.talk-modal {
+  border: 1px solid #03B352;
+  background: #0a1410;
+  margin: 8px 0;
+}
+.talk-modal-head {
+  background: #03B352;
+  color: #000;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.talk-modal-head .talk-close {
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 6px;
+  background: #000;
+  color: #03B352;
+}
+.talk-modal-head .talk-close:hover {
+  background: #c97d5f;
+  color: #000;
+}
+.talk-modal-body {
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.talk-option {
+  background: #000;
+  border: 1px solid #2d5a3e;
+  color: #8fb39a;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 10px 6px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.1s;
+}
+.talk-option:hover {
+  background: #0d1f14;
+  color: #03B352;
+  border-color: #03B352;
+}
+
 /* ============================================================
    ▓▓▓ 모바일 반응형 (700px 이하) ▓▓▓
 ============================================================ */
@@ -674,6 +727,10 @@ body {
   /* 크루 */
   .crew-tbl table { font-size: 10px; }
   .crew-tbl td { padding: 3px 7px; }
+
+  /* TALK 모달: 2열 */
+  .talk-modal-body { grid-template-columns: repeat(2, 1fr); }
+  .talk-option { font-size: 11px; padding: 9px 4px; }
 
   /* 명령: 3열 */
   .cmds { grid-template-columns: repeat(3, 1fr); gap: 4px; }

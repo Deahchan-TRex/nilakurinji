@@ -46,20 +46,22 @@ export const CONFIG = {
   ],
 
   // ── 스탯 감소율 (시간당) ──────────────────────────────
+  // 24명이 1시간에 각 스탯당 1-2회씩 행동해야 유지되는 페이스
   DECAY_PER_HOUR: {
-    hunger:  4,
-    happy:   3,
-    energy:  3,
-    hygiene: 2,
+    hunger:  8,
+    happy:   6,
+    energy:  5,
+    hygiene: 4,
   },
 
   // ── 행동별 효과 ───────────────────────────────────────
+  // 1회 행동으로 2-3시간치 회복. 전체 24명 분량으로 밸런스 유지
   ACTIONS: {
-    feed:  { hunger:  25, happy:   3, hygiene: -3, exp: 5,  label: 'FEED',  desc: '먹이주기'  },
-    play:  { happy:   25, energy: -15, hunger: -5, exp: 8,  label: 'PLAY',  desc: '놀아주기'  },
-    sleep: { energy:  40, hunger:  -8, happy:  2,  exp: 2,  label: 'SLEEP', desc: '재우기'    },
-    clean: { hygiene: 35, happy:   5, exp: 3,                 label: 'CLEAN', desc: '씻기기'    },
-    train: { energy: -20, hunger: -10, happy: -5, exp: 20, label: 'TRAIN', desc: '훈련하기'  },
+    feed:  { hunger:  20, happy:   3, hygiene: -3, exp: 5,  label: 'FEED',  desc: '먹이주기'  },
+    play:  { happy:   20, energy: -12, hunger: -4, exp: 8,  label: 'PLAY',  desc: '놀아주기'  },
+    sleep: { energy:  30, hunger:  -6, happy:  2,  exp: 2,  label: 'SLEEP', desc: '재우기'    },
+    clean: { hygiene: 25, happy:   5, exp: 3,                 label: 'CLEAN', desc: '씻기기'    },
+    train: { energy: -18, hunger: -8, happy: -4, exp: 20, label: 'TRAIN', desc: '훈련하기'  },
   },
 
   // ── 행동 → 성격 영향 ─────────────────────────────────
@@ -72,12 +74,13 @@ export const CONFIG = {
   },
 
   // ── 진화 단계 (시간 기준) ─────────────────────────────
+  // 1.5일 EGG → 이후 단계는 자동으로 뒤로 밀림
   STAGES: [
-    { name: 'EGG',   fromHour: 0,   toHour: 6   },
-    { name: 'BABY',  fromHour: 6,   toHour: 48  },
-    { name: 'CHILD', fromHour: 48,  toHour: 120 },
-    { name: 'TEEN',  fromHour: 120, toHour: 240 },
-    { name: 'ADULT', fromHour: 240, toHour: 336 },
+    { name: 'EGG',   fromHour: 0,   toHour: 36  },   // 0 ~ 1.5일
+    { name: 'BABY',  fromHour: 36,  toHour: 84  },   // 1.5 ~ 3.5일
+    { name: 'CHILD', fromHour: 84,  toHour: 156 },   // 3.5 ~ 6.5일
+    { name: 'TEEN',  fromHour: 156, toHour: 264 },   // 6.5 ~ 11일
+    { name: 'ADULT', fromHour: 264, toHour: 336 },   // 11 ~ 14일
   ],
 
   // ── 사망/부활 ─────────────────────────────────────────

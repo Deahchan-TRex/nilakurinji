@@ -14,6 +14,7 @@ import {
 import {
   getActionSpeech, getWarningSpeech, getIdleSpeech,
   pickSpeech, SPEECHES, getCrewFavorites,
+  getTimeGreeting, getWelcomeSpeech, getTalkTopics, getTalkResponse,
 } from './speeches.js';
 
 // ────────────────────────────────────────────────────────────
@@ -234,8 +235,11 @@ function renderMain() {
   // 키보드 단축키
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
-    const map = { f: 'feed', p: 'play', s: 'sleep', c: 'clean', t: 'train', l: 'lore' };
-    if (map[e.key.toLowerCase()]) handleAction(map[e.key.toLowerCase()]);
+    const map = { f: 'feed', p: 'play', s: 'sleep', c: 'clean', t: 'train', l: 'lore', k: 'talk' };
+    const act = map[e.key.toLowerCase()];
+    if (act === 'lore') showLore();
+    else if (act === 'talk') showTalkMenu();
+    else if (act) handleAction(act);
   });
 }
 
@@ -252,14 +256,15 @@ function renderCommandButtons() {
     <button class="cmd primary" data-act="sleep">[S] SLEEP</button>
     <button class="cmd primary" data-act="clean">[C] CLEAN</button>
     <button class="cmd primary" data-act="train">[T] TRAIN</button>
-    <button class="cmd" data-act="lore">[L] LORE</button>
+    <button class="cmd primary" data-act="talk">[K] TALK</button>
   `;
 
-  // 관리자가 아닐 경우: LOGOUT / HELP 두 개만
+  // 관리자가 아닐 경우: LORE / LOGOUT / HELP
   if (!currentUser.isAdmin) {
     adminCmds.innerHTML = `
-      <button class="cmd" data-act="logout" style="grid-column: span 3;">[X] LOGOUT</button>
-      <button class="cmd" data-act="help" style="grid-column: span 3;">[?] HELP</button>
+      <button class="cmd" data-act="lore" style="grid-column: span 2;">[L] LORE</button>
+      <button class="cmd" data-act="logout" style="grid-column: span 2;">[X] LOGOUT</button>
+      <button class="cmd" data-act="help" style="grid-column: span 2;">[?] HELP</button>
     `;
   } else {
     // 관리자일 경우: 두 줄 — 관리 명령 + 시뮬레이션 점프
@@ -268,8 +273,8 @@ function renderCommandButtons() {
       <button class="cmd admin" data-act="edit">[E] EDIT</button>
       <button class="cmd admin" data-act="adminrevive">[V] REVIVE</button>
       <button class="cmd admin" data-act="backup">[B] BACKUP</button>
+      <button class="cmd" data-act="lore">[L] LORE</button>
       <button class="cmd" data-act="logout">[X] LOGOUT</button>
-      <button class="cmd" data-act="help">[?] HELP</button>
     `;
 
     // 관리자 시뮬레이션 바 추가 (단계 점프)
@@ -313,6 +318,7 @@ function renderCommandButtons() {
     btn.addEventListener('click', () => {
       const act = btn.dataset.act;
       if (act === 'lore') showLore();
+      else if (act === 'talk') showTalkMenu();
       else if (act === 'reset') adminReset();
       else if (act === 'edit') adminEdit();
       else if (act === 'adminrevive') adminRevive();
@@ -341,6 +347,7 @@ function handleCommand(raw) {
   }
 
   if (head === 'lore') return showLore();
+  if (head === 'talk') return showTalkMenu();
   if (head === 'help' || head === '?') return showHelp();
   if (head === 'logout' || head === 'exit') return doLogout();
 
@@ -681,10 +688,104 @@ function showLore() {
   });
 }
 
+// ────────────────────────────────────────────────────────────
+// TALK 모달 — 대화 주제 선택 팝업
+// ────────────────────────────────────────────────────────────
+function showTalkMenu() {
+  if (!currentPet || currentPet.isDead) return;
+  if (currentPet.stage === 'EGG') {
+    appendSystemLog('⚠ 아직 대화할 수 없습니다. 부화를 기다려주세요.', 'warn');
+    return;
+  }
+
+  // 이미 열려있으면 닫기 (토글)
+  const existing = document.getElementById('talk-modal');
+  if (existing) { existing.remove(); return; }
+
+  const topics = getTalkTopics();
+  const modal = document.createElement('div');
+  modal.id = 'talk-modal';
+  modal.className = 'talk-modal';
+  modal.innerHTML = `
+    <div class="talk-modal-head">
+      <span>▶ 무슨 이야기를 할까?</span>
+      <span class="talk-close" id="talk-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body">
+      ${topics.map(t => `
+        <button class="talk-option" data-topic="${t.key}">${t.label}</button>
+      `).join('')}
+    </div>
+  `;
+
+  // 말풍선 영역 위에 끼워넣기
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  // 닫기
+  document.getElementById('talk-close').addEventListener('click', () => modal.remove());
+
+  // 주제 선택
+  modal.querySelectorAll('.talk-option').forEach(btn => {
+    btn.addEventListener('click', () => {
+      handleTalk(btn.dataset.topic);
+      modal.remove();
+    });
+  });
+}
+
+async function handleTalk(topicKey) {
+  if (!currentPet || currentPet.isDead) return;
+
+  const { fav, least } = getCrewFavorites(currentPet);
+  const vars = {
+    user: currentUser.name,
+    prevUser: prevUser || '누군가',
+    name: currentPet.name,
+    fav, least,
+  };
+
+  const response = getTalkResponse(topicKey, currentPet, vars);
+  if (!response) {
+    appendSystemLog('⚠ 주제를 불러오지 못했습니다.', 'warn');
+    return;
+  }
+
+  // 캐릭터 대사로 응답
+  currentPet.lastSpeech = { text: response, at: Date.now(), to: currentUser.key };
+  prevUser = currentUser.name;
+
+  // 대화는 happy +3 (소소한 즐거움)
+  currentPet.happy = Math.min(100, currentPet.happy + 3);
+  currentPet.bond = Math.min(100, (currentPet.bond || 0) + 0.3);
+
+  // 대화도 크루 기억에 기록 (약한 무게)
+  currentPet.crewMemory = currentPet.crewMemory || {};
+  const mem = currentPet.crewMemory[currentUser.name] || {
+    feed: 0, play: 0, sleep: 0, clean: 0, train: 0, talk: 0,
+    total: 0, lastAction: null, lastAt: 0,
+  };
+  mem.talk = (mem.talk || 0) + 1;
+  mem.total = (mem.total || 0) + 0.5;  // 대화는 돌봄의 절반 가중치
+  mem.lastAction = 'talk';
+  mem.lastAt = Date.now();
+  currentPet.crewMemory[currentUser.name] = mem;
+
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'TALK',
+    text: `💬 ${SPEECHES.talkTopics[topicKey]?.label || topicKey}`,
+    type: 'action',
+  });
+}
+
 function showHelp() {
   const cmds = [
     '─── BASIC COMMANDS ───',
     'feed / play / sleep / clean / train — 기본 행동',
+    'talk — 대화 주제 선택',
     'lore — 세계관 정보',
     'logout — 로그아웃',
     'help — 이 도움말',
@@ -1101,6 +1202,29 @@ async function startGame() {
   Backend.onPetChange(pet => { currentPet = pet; render(); });
   Backend.onLogsChange(newLogs => { logs = newLogs; render(); });
 
+  // 로그인 시 맞이 대사 (EGG 단계 아니고, 관리자 아닐 때)
+  setTimeout(() => {
+    if (!currentPet || currentPet.isDead) return;
+    if (currentPet.stage === 'EGG') return;
+    if (currentUser.isAdmin) return;
+
+    const { fav, least } = getCrewFavorites(currentPet);
+    const vars = {
+      user: currentUser.name, name: currentPet.name,
+      prevUser: prevUser || '누군가', fav, least,
+    };
+
+    // 70% 맞이 대사, 30% 시간대 인사
+    const welcome = Math.random() < 0.7
+      ? getWelcomeSpeech(currentPet, currentUser.name, vars)
+      : getTimeGreeting(currentPet, vars);
+
+    if (welcome) {
+      currentPet.lastSpeech = { text: welcome, at: Date.now(), to: currentUser.key };
+      Backend.savePet(currentPet);
+    }
+  }, 500);
+
   // 주기적 틱 (5초) + 유휴 대사
   setInterval(() => {
     if (!currentPet || currentPet.isDead) return;
@@ -1114,8 +1238,11 @@ async function startGame() {
         prevUser: prevUser || '누군가',
         fav, least,
       };
+      // 위기 대사 > 시간대 인사(20%) > 유휴
       const warn = getWarningSpeech(currentPet, vars);
-      const spk = warn || getIdleSpeech(currentPet, vars);
+      const spk = warn
+        || (Math.random() < 0.2 ? getTimeGreeting(currentPet, vars) : null)
+        || getIdleSpeech(currentPet, vars);
       if (spk) {
         currentPet.lastSpeech = { text: spk, at: Date.now(), to: '__sys__' };
         Backend.savePet(currentPet);
