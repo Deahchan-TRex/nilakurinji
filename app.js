@@ -8,6 +8,8 @@ import { renderTeddy } from './teddy.js';
 import {
   tickStats, updateStage, applyAction, revive,
   personalityLabel, getProgress,
+  getEggNarrative, getEggNarrativeIndex,
+  getStageNarrative, getStageNarrativeKey,
 } from './game.js';
 import {
   getActionSpeech, getWarningSpeech, getIdleSpeech,
@@ -72,7 +74,7 @@ function renderLogin() {
           </div>
         </div>
 
-        <div class="login-hint">// 관리자 권한은 ${CONFIG.ADMIN_KEYWORD}로 입력하세요 //</div>
+        <div class="login-hint">// NILAKURINJI MANIFEST SYSTEM // COHORT 087 //</div>
       </div>
     </div>
   `;
@@ -213,7 +215,7 @@ function renderMain() {
     document.getElementById('admin-hint').className = 'admin-hint active';
     document.getElementById('admin-hint').textContent = '// ADMIN MODE ACTIVE — 위험한 명령 사용 가능 //';
   } else {
-    document.getElementById('admin-hint').textContent = `// locked 명령은 ${CONFIG.ADMIN_KEYWORD} 권한 필요 //`;
+    document.getElementById('admin-hint').textContent = '';
   }
 
   // 명령 버튼 렌더
@@ -253,22 +255,26 @@ function renderCommandButtons() {
     <button class="cmd" data-act="lore">[L] LORE</button>
   `;
 
-  const lock = currentUser.isAdmin ? 'admin' : 'locked';
-  adminCmds.innerHTML = `
-    <button class="cmd ${lock}" data-act="reset">[R] RESET</button>
-    <button class="cmd ${lock}" data-act="edit">[E] EDIT</button>
-    <button class="cmd ${lock}" data-act="adminrevive">[V] REVIVE</button>
-    <button class="cmd ${lock}" data-act="backup">[B] BACKUP</button>
-    <button class="cmd" data-act="logout">[X] LOGOUT</button>
-    <button class="cmd" data-act="help">[?] HELP</button>
-  `;
+  // 관리자가 아닐 경우: LOGOUT / HELP 두 개만 표시
+  if (!currentUser.isAdmin) {
+    adminCmds.innerHTML = `
+      <button class="cmd" data-act="logout" style="grid-column: span 3;">[X] LOGOUT</button>
+      <button class="cmd" data-act="help" style="grid-column: span 3;">[?] HELP</button>
+    `;
+  } else {
+    // 관리자일 경우: 모든 관리 버튼 표시
+    adminCmds.innerHTML = `
+      <button class="cmd admin" data-act="reset">[R] RESET</button>
+      <button class="cmd admin" data-act="edit">[E] EDIT</button>
+      <button class="cmd admin" data-act="adminrevive">[V] REVIVE</button>
+      <button class="cmd admin" data-act="backup">[B] BACKUP</button>
+      <button class="cmd" data-act="logout">[X] LOGOUT</button>
+      <button class="cmd" data-act="help">[?] HELP</button>
+    `;
+  }
 
   document.querySelectorAll('.cmd').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (btn.classList.contains('locked')) {
-        appendSystemLog(`⚠ ${CONFIG.ADMIN_KEYWORD} 권한이 필요합니다.`, 'warn');
-        return;
-      }
       const act = btn.dataset.act;
       if (act === 'lore') showLore();
       else if (act === 'reset') adminReset();
@@ -301,7 +307,7 @@ function handleCommand(raw) {
 
   // 관리자 전용
   if (!currentUser.isAdmin) {
-    appendSystemLog(`⚠ "${head}": 알 수 없는 명령이거나 ${CONFIG.ADMIN_KEYWORD} 권한 필요`, 'warn');
+    appendSystemLog(`⚠ "${head}": 알 수 없는 명령입니다. help 입력.`, 'warn');
     return;
   }
 
@@ -312,6 +318,12 @@ function handleCommand(raw) {
   if (head === 'kill') return adminKill();
   if (head === 'evolve') return adminEvolve(args[0]);
   if (head === 'set') return adminSet(args[0], args[1]);
+  if (head === 'age') return adminAge(args[0]);
+  if (head === 'persona') return adminPersona(args[0], args[1]);
+  if (head === 'say') return adminSay(args.join(' '));
+  if (head === 'narrate') return adminNarrate(args.join(' '));
+  if (head === 'status') return adminStatus();
+  if (head === 'clear-logs' || head === 'clearlogs') return adminClearLogs();
 
   appendSystemLog(`⚠ "${head}": 알 수 없는 명령입니다. help 입력.`, 'warn');
 }
@@ -382,16 +394,32 @@ function render() {
   document.getElementById('pet-art').textContent = renderTeddy(currentPet);
   document.getElementById('stage-badge').textContent = currentPet.stage;
 
-  // 부가 스탯
-  document.getElementById('pet-extras').innerHTML = `
-    <div class="kv-row"><span class="k">STRENGTH</span><span class="v hl">${Math.round(currentPet.strength)}</span></div>
-    <div class="kv-row"><span class="k">INTEL</span><span class="v hl">${Math.round(currentPet.intel)}</span></div>
-    <div class="kv-row"><span class="k">BOND</span><span class="v hl">${Math.round(currentPet.bond)}</span></div>
-    <div class="kv-row"><span class="k">LEVEL</span><span class="v">${currentPet.level || 1}</span></div>
-    <div class="kv-row divider-top"><span class="k">REVIVE</span>
-      <span class="v" style="color:#c97d5f;">${renderReviveDots(currentPet.deathCount)}</span>
-    </div>
-  `;
+  // 부가 스탯 - EGG일 땐 승선 타임라인으로 대체
+  if (currentPet.stage === 'EGG') {
+    const hoursLived = Math.max(0, (Date.now() - currentPet.bornAt) / 3600000);
+    const remaining = Math.max(0, 36 - hoursLived);
+    const narrative = getEggNarrative(currentPet);
+    document.getElementById('pet-extras').innerHTML = `
+      <div style="text-align:center;color:#8fb39a;font-size:11px;letter-spacing:2px;margin-bottom:8px;">
+        ── 닐라쿠린지호 항해 중 ──
+      </div>
+      <div class="kv-row"><span class="k">ELAPSED</span><span class="v hl">${Math.floor(hoursLived)}h</span></div>
+      <div class="kv-row"><span class="k">TO HATCH</span><span class="v" style="color:#e8a853;">${Math.floor(remaining)}h</span></div>
+      <div style="margin-top:8px;padding:6px 8px;background:#0d1f14;border:1px dotted #2d5a3e;font-size:10px;color:#8fb39a;line-height:1.7;font-style:italic;">
+        ${narrative ? narrative.text : '◎ 승선 대기 중…'}
+      </div>
+    `;
+  } else {
+    document.getElementById('pet-extras').innerHTML = `
+      <div class="kv-row"><span class="k">STRENGTH</span><span class="v hl">${Math.round(currentPet.strength)}</span></div>
+      <div class="kv-row"><span class="k">INTEL</span><span class="v hl">${Math.round(currentPet.intel)}</span></div>
+      <div class="kv-row"><span class="k">BOND</span><span class="v hl">${Math.round(currentPet.bond)}</span></div>
+      <div class="kv-row"><span class="k">LEVEL</span><span class="v">${currentPet.level || 1}</span></div>
+      <div class="kv-row divider-top"><span class="k">REVIVE</span>
+        <span class="v" style="color:#c97d5f;">${renderReviveDots(currentPet.deathCount)}</span>
+      </div>
+    `;
+  }
 
   // 메인 스탯
   document.getElementById('stat-table').innerHTML = `
@@ -418,6 +446,25 @@ function render() {
     `;
     const rBtn = document.getElementById('revive-btn');
     if (rBtn) rBtn.addEventListener('click', doRevive);
+  } else if (currentPet.stage === 'EGG') {
+    // EGG: 해설을 말풍선 자리에 표시
+    const narrative = getEggNarrative(currentPet);
+    const hoursLived = Math.max(0, (Date.now() - currentPet.bornAt) / 3600000);
+    const remaining = Math.max(0, 36 - hoursLived);
+    speechWrapper.innerHTML = `
+      <div class="speech">
+        <div class="speech-head">
+          <span>▶ ARCHIVE LOG // COHORT 087</span>
+          <span>T-${Math.floor(remaining)}h</span>
+        </div>
+        <div class="speech-body" style="font-style:normal;color:#8fb39a;">
+          ${narrative ? narrative.text.replace('◎ ', '') : '승선 대기 중…'}
+        </div>
+      </div>
+      <div style="padding:8px 12px;background:#050a07;border:1px dotted #2d5a3e;margin-bottom:8px;font-size:11px;color:#6b8f76;text-align:center;letter-spacing:1px;">
+        // 닐라쿠린지호 항해 중 — 부화까지 기다려주세요 //
+      </div>
+    `;
   } else {
     const lastSpeech = currentPet.lastSpeech;
     speechWrapper.innerHTML = `
@@ -448,16 +495,17 @@ function render() {
     <div class="persona-label">◆ ${personalityLabel(currentPet)} ◆</div>
   `;
 
-  // 크루 (현재는 나 혼자만 online으로 표시 — 나중에 Firebase presence로 확장)
+  // 크루 (본인만 표시 — 페이지 길이 축소)
   document.getElementById('crew-list').innerHTML = `
     <table>
-      ${CONFIG.MEMBERS.map(m => {
-        const isMe = m.key === currentUser.key;
-        return `<tr class="${isMe ? 'me' : 'off'}">
-          <td class="dot">${isMe ? '●' : '·'}</td>
-          <td>${m.name}${isMe ? ' (ME)' : ''}</td>
-        </tr>`;
-      }).join('')}
+      <tr class="me">
+        <td class="dot">●</td>
+        <td>${currentUser.name} (ME)</td>
+      </tr>
+      <tr class="off" style="font-size:10px;">
+        <td class="dot">·</td>
+        <td style="color:#6b8f76;">외 ${CONFIG.MEMBERS.length - 1}명</td>
+      </tr>
     </table>
   `;
   document.getElementById('crew-online').textContent = '01';
@@ -478,6 +526,29 @@ function render() {
   document.querySelectorAll('.cmd.primary').forEach(b => {
     b.disabled = dead || isEgg;
   });
+
+  // 모든 단계: 시간대별 아카이브 해설 자동 노출
+  // 단계가 바뀌면 키가 바뀌므로 새 단계에서도 처음부터 다시 노출됨
+  const narrativeKey = getStageNarrativeKey(currentPet);
+  if (narrativeKey && currentPet.narrativeShownKey !== narrativeKey) {
+    const narrative = getStageNarrative(currentPet);
+    if (narrative) {
+      currentPet.narrativeShownKey = narrativeKey;
+
+      // EGG 단계에서는 말풍선 자리를 해설이 차지 (캐릭터가 말을 못 하니까)
+      // BABY 이후부터는 캐릭터 대사를 방해하지 않도록 로그에만 기록
+      if (currentPet.stage === 'EGG') {
+        currentPet.lastSpeech = { text: narrative.text, at: Date.now(), to: '__sys__' };
+      }
+
+      Backend.savePet(currentPet);
+      Backend.addLog({
+        user: null, action: 'ARCHIVE',
+        text: narrative.text,
+        type: 'system',
+      });
+    }
+  }
 
   // 진화 감지
   if (stageResult.evolved) {
@@ -567,20 +638,35 @@ function showLore() {
 
 function showHelp() {
   const cmds = [
+    '─── BASIC COMMANDS ───',
     'feed / play / sleep / clean / train — 기본 행동',
     'lore — 세계관 정보',
     'logout — 로그아웃',
-    currentUser.isAdmin ? '──── ADMIN ────' : null,
-    currentUser.isAdmin ? 'reset — 전체 초기화' : null,
-    currentUser.isAdmin ? 'revive — 강제 부활 (카운트 소모 안함)' : null,
-    currentUser.isAdmin ? 'kill — 강제 사망 (테스트)' : null,
-    currentUser.isAdmin ? 'set <stat> <value> — 스탯 직접 설정 (예: set hunger 80)' : null,
-    currentUser.isAdmin ? 'evolve <stage> — 진화 강제 (egg/baby/child/teen/adult)' : null,
-    currentUser.isAdmin ? 'backup — JSON 백업 다운로드' : null,
-    currentUser.isAdmin ? 'restore — 백업 파일로 복원' : null,
-  ].filter(Boolean);
+    'help — 이 도움말',
+  ];
+  if (currentUser.isAdmin) {
+    cmds.push(
+      '',
+      '─── ADMIN COMMANDS ───',
+      'reset — 전체 초기화',
+      'revive — 강제 부활 (카운트 소모 없음)',
+      'kill — 강제 사망 (테스트용)',
+      'set <stat> <val> — 스탯 설정 (예: set hunger 80)',
+      '  → stats: hunger/happy/energy/hygiene/strength/intel/bond/level/exp',
+      'persona <axis> <val> — 성격 설정 (-100~+100)',
+      '  → axes: active/greed/social/diligent',
+      'age <hours> — 나이 조정 (예: age 50 = 50시간 진행)',
+      'evolve <stage> — 진화 강제 (egg/baby/child/teen/adult)',
+      'say <text> — 캐릭터 강제 대사',
+      'narrate <text> — 시스템 아카이브 메시지 추가',
+      'status — 전체 상태 덤프',
+      'backup — JSON 백업 다운로드',
+      'restore — 백업 파일 복원',
+      'clear-logs — 로그 전체 삭제',
+    );
+  }
   cmds.forEach((l, i) => {
-    setTimeout(() => Backend.addLog({ user: 'SYS', action: 'HELP', text: l, type: 'system' }), i * 80);
+    setTimeout(() => Backend.addLog({ user: 'SYS', action: 'HELP', text: l, type: 'system' }), i * 60);
   });
 }
 
@@ -741,6 +827,122 @@ function adminRestore() {
     }
   };
   input.click();
+}
+
+// ── 새 관리자 명령 ──────────────────────────────────
+
+async function adminAge(hoursStr) {
+  if (!currentUser.isAdmin) return;
+  const hours = Number(hoursStr);
+  if (isNaN(hours)) {
+    appendSystemLog('⚠ 사용법: age <시간> (예: age 50 → 50시간 진행, age -10 → 10시간 되돌림)', 'warn');
+    return;
+  }
+  // bornAt을 hours만큼 과거로 이동 = 그만큼 나이 먹는 효과
+  currentPet.bornAt -= hours * 3600 * 1000;
+  currentPet.lastTickAt = Date.now(); // 스탯 즉시 감소 막기 위해 리셋
+  // 해설 중복 방지키 초기화 (새 시점에 맞게 다시 노출)
+  delete currentPet.narrativeShownKey;
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'AGE',
+    text: `⚙ 나이 ${hours > 0 ? '+' : ''}${hours}h 조정`,
+    type: 'admin',
+  });
+}
+
+async function adminPersona(axis, valStr) {
+  if (!currentUser.isAdmin) return;
+  const validAxes = ['activeVsCalm','greedVsTemperance','socialVsIntro','diligentVsFree',
+                     'active','greed','social','diligent'];  // 단축명 허용
+  const axisMap = {
+    active: 'activeVsCalm',
+    greed: 'greedVsTemperance',
+    social: 'socialVsIntro',
+    diligent: 'diligentVsFree',
+  };
+  const key = axisMap[axis] || axis;
+  if (!validAxes.includes(axis)) {
+    appendSystemLog(`⚠ 사용법: persona <axis> <value>`, 'warn');
+    appendSystemLog(`   axis: active/greed/social/diligent (또는 풀네임)`, 'warn');
+    appendSystemLog(`   value: -100 ~ +100`, 'warn');
+    return;
+  }
+  const val = Number(valStr);
+  if (isNaN(val)) {
+    appendSystemLog(`⚠ 숫자가 아닙니다: ${valStr}`, 'warn');
+    return;
+  }
+  currentPet.personality = currentPet.personality || {};
+  currentPet.personality[key] = Math.max(-100, Math.min(100, val));
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'PERSONA',
+    text: `⚙ ${key} = ${val}`,
+    type: 'admin',
+  });
+}
+
+async function adminSay(text) {
+  if (!currentUser.isAdmin) return;
+  if (!text) {
+    appendSystemLog('⚠ 사용법: say <대사 내용>', 'warn');
+    return;
+  }
+  currentPet.lastSpeech = { text, at: Date.now(), to: '__admin__' };
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'SAY',
+    text: `⚙ 캐릭터 강제 대사: "${text}"`,
+    type: 'admin',
+  });
+}
+
+async function adminNarrate(text) {
+  if (!currentUser.isAdmin) return;
+  if (!text) {
+    appendSystemLog('⚠ 사용법: narrate <해설 내용>', 'warn');
+    return;
+  }
+  await Backend.addLog({
+    user: null, action: 'ARCHIVE',
+    text: '◎ ' + text,
+    type: 'system',
+  });
+}
+
+function adminStatus() {
+  if (!currentUser.isAdmin || !currentPet) return;
+  const p = currentPet;
+  const hoursLived = Math.max(0, (Date.now() - p.bornAt) / 3600000);
+  const lines = [
+    `── STATUS DUMP ──`,
+    `name: ${p.name} (${p.stage} · LV ${p.level || 1})`,
+    `age: ${hoursLived.toFixed(1)}h / ${CONFIG.DURATION_DAYS * 24}h`,
+    `vitals: H${Math.round(p.hunger)} P${Math.round(p.happy)} E${Math.round(p.energy)} C${Math.round(p.hygiene)}`,
+    `growth: STR${Math.round(p.strength)} INT${Math.round(p.intel)} BND${Math.round(p.bond)}`,
+    `persona: active=${p.personality.activeVsCalm} greed=${p.personality.greedVsTemperance} social=${p.personality.socialVsIntro} diligent=${p.personality.diligentVsFree}`,
+    `counters: ${Object.entries(p.counters).map(([k,v]) => `${k}${v}`).join(' ')}`,
+    `death: ${p.deathCount}/${CONFIG.MAX_REVIVES} (isDead=${p.isDead})`,
+  ];
+  lines.forEach((l, i) => {
+    setTimeout(() => Backend.addLog({ user: 'SYS', action: 'STATUS', text: l, type: 'admin' }), i * 80);
+  });
+}
+
+async function adminClearLogs() {
+  if (!currentUser.isAdmin) return;
+  if (!confirm('모든 로그를 삭제합니다. 계속할까요?')) return;
+  if (CONFIG.LOCAL_TEST_MODE) {
+    localStorage.removeItem('nk_logs');
+  }
+  logs = [];
+  // 빈 배열로 다시 리스너 호출
+  await Backend.addLog({
+    user: currentUser.name, action: 'CLEAR',
+    text: '⚙ 로그 초기화됨',
+    type: 'admin',
+  });
 }
 
 // ────────────────────────────────────────────────────────────
