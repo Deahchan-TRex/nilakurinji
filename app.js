@@ -13,7 +13,7 @@ import {
 } from './game.js';
 import {
   getActionSpeech, getWarningSpeech, getIdleSpeech,
-  pickSpeech, SPEECHES,
+  pickSpeech, SPEECHES, getCrewFavorites,
 } from './speeches.js';
 
 // ────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ function renderLogin() {
   app.innerHTML = `
     <div class="login">
       <div class="top-bar">
-        <span>NILAKURINJI-01 // DOCK BAY 7</span>
+        <span>CALLA-LILY-01 // DOCK BAY 7</span>
         <span><span class="blink">■</span> SECURE CONNECTION</span>
       </div>
       <div class="login-body">
@@ -43,18 +43,18 @@ function renderLogin() {
 │        2026.03 INTAKE — COHORT 087          │
 │                                             │
 └─────────────────────────────────────────────┘</pre>
-        <h1>닐라쿠린지호 · 관리 단말</h1>
+        <h1>칼라릴리호 · 관리 단말</h1>
         <div class="sub">CREW AUTHENTICATION REQUIRED</div>
 
         <div class="lore-block">
-          <div class="lore-title">▶ CARGO MANIFEST // SUBJECT-02847</div>
+          <div class="lore-title">▶ 꽃잎 속 이름 // SUBJECT-02847</div>
           <div class="lore-body">
-            DESIGNATION &nbsp;: <span class="hl">크림슨 오퍼튜니티 마르스 II</span><br>
-            ORIGIN &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: <span class="hl">아레스 베이스 원</span> / 행성 간 자원 개발 사무소<br>
-            PARENT &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: <span class="warn">크림슨 오퍼튜니티 마르스 I (deceased)</span><br>
-            NAMING &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: 화성 탐사선 『오퍼튜니티』를 기림<br>
-            STATUS &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: 수송 대기 / <span class="hl">COHORT 087</span> 배속<br>
-            NOTE &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: '사슬' 소지 허가 / 고향 연락 가능
+            이 름 &nbsp;&nbsp;&nbsp;&nbsp;: <span class="hl">크림슨 오퍼튜니티 마르스 II</span><br>
+            온 곳 &nbsp;&nbsp;&nbsp;&nbsp;: <span class="hl">붉은 땅</span> / 기회를 쫓던 이들의 자리<br>
+            아 버 지 &nbsp;: <span class="warn">크림슨 오퍼튜니티 마르스 I — 그 땅에 묻혔다</span><br>
+            이 름 의 뜻 : 오래전 붉은 행성을 걸었던 탐사선을 기린다<br>
+            상 태 &nbsp;&nbsp;&nbsp;&nbsp;: 꽃잎에 싸여 대기 / <span class="hl">COHORT 087</span> 명단<br>
+            부 기 &nbsp;&nbsp;&nbsp;&nbsp;: '사슬' 한 가닥 허용 — 고향과 겨우 이어진 실
           </div>
         </div>
 
@@ -74,7 +74,7 @@ function renderLogin() {
           </div>
         </div>
 
-        <div class="login-hint">// NILAKURINJI MANIFEST SYSTEM // COHORT 087 //</div>
+        <div class="login-hint">// CALLA-LILY MANIFEST SYSTEM // COHORT 087 //</div>
       </div>
     </div>
   `;
@@ -115,7 +115,7 @@ function renderMain() {
   app.innerHTML = `
     <div class="terminal">
       <div class="term-bar">
-        <span><span class="status-dot"></span>NILAKURINJI-01 // CREW: <span id="current-user"></span><span id="admin-badge"></span></span>
+        <span><span class="status-dot"></span>CALLA-LILY-01 // CREW: <span id="current-user"></span><span id="admin-badge"></span></span>
         <span id="time-info">LOADING...</span>
       </div>
       <div class="term-body">
@@ -255,14 +255,14 @@ function renderCommandButtons() {
     <button class="cmd" data-act="lore">[L] LORE</button>
   `;
 
-  // 관리자가 아닐 경우: LOGOUT / HELP 두 개만 표시
+  // 관리자가 아닐 경우: LOGOUT / HELP 두 개만
   if (!currentUser.isAdmin) {
     adminCmds.innerHTML = `
       <button class="cmd" data-act="logout" style="grid-column: span 3;">[X] LOGOUT</button>
       <button class="cmd" data-act="help" style="grid-column: span 3;">[?] HELP</button>
     `;
   } else {
-    // 관리자일 경우: 모든 관리 버튼 표시
+    // 관리자일 경우: 두 줄 — 관리 명령 + 시뮬레이션 점프
     adminCmds.innerHTML = `
       <button class="cmd admin" data-act="reset">[R] RESET</button>
       <button class="cmd admin" data-act="edit">[E] EDIT</button>
@@ -270,6 +270,42 @@ function renderCommandButtons() {
       <button class="cmd admin" data-act="backup">[B] BACKUP</button>
       <button class="cmd" data-act="logout">[X] LOGOUT</button>
       <button class="cmd" data-act="help">[?] HELP</button>
+    `;
+
+    // 관리자 시뮬레이션 바 추가 (단계 점프)
+    let simBar = document.getElementById('cmds-sim');
+    if (!simBar) {
+      simBar = document.createElement('div');
+      simBar.id = 'cmds-sim';
+      simBar.className = 'cmds';
+      simBar.style.marginTop = '4px';
+      adminCmds.parentNode.insertBefore(simBar, adminCmds.nextSibling);
+    }
+    simBar.innerHTML = `
+      <button class="cmd admin" data-act="sim-egg">→ EGG</button>
+      <button class="cmd admin" data-act="sim-baby">→ BABY</button>
+      <button class="cmd admin" data-act="sim-child">→ CHILD</button>
+      <button class="cmd admin" data-act="sim-teen">→ TEEN</button>
+      <button class="cmd admin" data-act="sim-adult">→ ADULT</button>
+      <button class="cmd admin" data-act="sim-kill">→ DEAD</button>
+    `;
+
+    // 스탯/성격 프리셋 바
+    let presetBar = document.getElementById('cmds-preset');
+    if (!presetBar) {
+      presetBar = document.createElement('div');
+      presetBar.id = 'cmds-preset';
+      presetBar.className = 'cmds';
+      presetBar.style.marginTop = '4px';
+      simBar.parentNode.insertBefore(presetBar, simBar.nextSibling);
+    }
+    presetBar.innerHTML = `
+      <button class="cmd admin" data-act="preset-full">스탯 MAX</button>
+      <button class="cmd admin" data-act="preset-low">스탯 LOW</button>
+      <button class="cmd admin" data-act="preset-active">활발/사교</button>
+      <button class="cmd admin" data-act="preset-intro">내향/차분</button>
+      <button class="cmd admin" data-act="preset-diligent">성실/절제</button>
+      <button class="cmd admin" data-act="status">STATUS</button>
     `;
   }
 
@@ -283,6 +319,9 @@ function renderCommandButtons() {
       else if (act === 'backup') adminBackup();
       else if (act === 'logout') doLogout();
       else if (act === 'help') showHelp();
+      else if (act === 'status') adminStatus();
+      else if (act.startsWith('sim-')) adminSimJump(act.slice(4));
+      else if (act.startsWith('preset-')) adminPreset(act.slice(7));
       else handleAction(act);
     });
   });
@@ -335,7 +374,7 @@ async function handleAction(action) {
   if (!currentPet) return;
 
   tickStats(currentPet);
-  const result = applyAction(currentPet, action);
+  const result = applyAction(currentPet, action, currentUser.name);
 
   if (!result.ok) {
     const reasons = {
@@ -352,16 +391,21 @@ async function handleAction(action) {
     return;
   }
 
+  // 크루 최애/가장 뜸한 크루 계산
+  const { fav, least } = getCrewFavorites(currentPet);
+
   // 대사 생성
   const speech = getActionSpeech(action, currentPet, {
-    user: currentUser.name, prevUser: prevUser || '누군가', name: currentPet.name,
+    user: currentUser.name,
+    prevUser: prevUser || '누군가',
+    name: currentPet.name,
+    fav, least,
   });
   if (speech) {
     currentPet.lastSpeech = { text: speech, at: Date.now(), to: currentUser.key };
   }
   prevUser = currentUser.name;
 
-  // EXP 증가분 전달용 로그
   const eff = CONFIG.ACTIONS[action];
   const effTxt = Object.entries(eff)
     .filter(([k]) => !['label','desc','exp'].includes(k))
@@ -401,7 +445,7 @@ function render() {
     const narrative = getEggNarrative(currentPet);
     document.getElementById('pet-extras').innerHTML = `
       <div style="text-align:center;color:#8fb39a;font-size:11px;letter-spacing:2px;margin-bottom:8px;">
-        ── 닐라쿠린지호 항해 중 ──
+        ── 칼라릴리호 항해 중 ──
       </div>
       <div class="kv-row"><span class="k">ELAPSED</span><span class="v hl">${Math.floor(hoursLived)}h</span></div>
       <div class="kv-row"><span class="k">TO HATCH</span><span class="v" style="color:#e8a853;">${Math.floor(remaining)}h</span></div>
@@ -462,7 +506,7 @@ function render() {
         </div>
       </div>
       <div style="padding:8px 12px;background:#050a07;border:1px dotted #2d5a3e;margin-bottom:8px;font-size:11px;color:#6b8f76;text-align:center;letter-spacing:1px;">
-        // 닐라쿠린지호 항해 중 — 부화까지 기다려주세요 //
+        // 칼라릴리호 항해 중 — 부화까지 기다려주세요 //
       </div>
     `;
   } else {
@@ -616,20 +660,21 @@ function appendSystemLog(text, type = 'system') {
 // ────────────────────────────────────────────────────────────
 function showLore() {
   const lines = [
-    '── 크림슨 오퍼튜니티 마르스 2세 ──',
+    '── 크림슨 오퍼튜니티 마르스 II세 ──',
     '',
-    '아버지 1세는 화성의 아레스 베이스 원에서',
-    '행성 간 자원 개발 사무소 소속으로 일했다.',
-    '광부의 생은 고단했고, 마지막 크레딧은',
-    '2세에게 보내졌다.',
+    '붉은 땅에서 온 아이.',
+    '아버지 1세는 그 땅의 틈에 자기 삶을 밀어넣다',
+    '그 틈에 삼켜졌다. 마지막 빛은 숫자로 바뀌어',
+    '이 아이에게 전해졌다.',
     '',
-    '이름 \'오퍼튜니티\'는 2000년대 지구의',
-    '붉은 행성 탐사선에서 따왔다.',
-    '크림슨 가계 대대로 내려오는 이름이다.',
+    '\'오퍼튜니티\'라는 이름은,',
+    '오래전 붉은 행성을 밟았던 작은 탐사선을 기린다.',
+    '닳아 멈출 때까지 그곳을 걸었던 이름.',
+    '크림슨 가계는 대대로 그 이름을 물려왔다.',
     '',
-    '지금 이 아이는 닐라쿠린지호에 승선했고,',
-    '\'사슬\'을 통해 아버지가 없는 고향과',
-    '가늘게 연결되어 있다.',
+    '지금 이 아이는 칼라릴리호에 실려 있다.',
+    '\'사슬\'이라 불리는 가느다란 끈을 통해',
+    '붉은 땅과 아직 연결되어 있다 — 얼마 동안은.',
   ];
   lines.forEach((l, i) => {
     setTimeout(() => Backend.addLog({ user: 'SYS', action: 'LORE', text: l, type: 'system' }), i * 100);
@@ -945,6 +990,107 @@ async function adminClearLogs() {
   });
 }
 
+// ── 시뮬레이션 도구 ─────────────────────────────────
+
+/**
+ * 특정 단계로 즉시 점프 (bornAt 조정 + 해설키 리셋)
+ */
+async function adminSimJump(targetStage) {
+  if (!currentUser.isAdmin) return;
+
+  if (targetStage === 'kill') {
+    currentPet.isDead = true;
+    currentPet.hunger = 0; currentPet.happy = 0; currentPet.energy = 0;
+    await Backend.savePet(currentPet);
+    await Backend.addLog({
+      user: currentUser.name, action: 'SIM',
+      text: '⚙ [시뮬] 강제 사망 상태',
+      type: 'admin',
+    });
+    return;
+  }
+
+  const stageUpper = targetStage.toUpperCase();
+  const stageDef = CONFIG.STAGES.find(s => s.name === stageUpper);
+  if (!stageDef) {
+    appendSystemLog(`⚠ 알 수 없는 단계: ${targetStage}`, 'warn');
+    return;
+  }
+
+  // bornAt을 해당 단계 시작 시간 + 약간의 여유 시간으로 설정
+  // (여유 시간 1h = 해당 단계의 초반 해설이 바로 보임)
+  const targetHour = stageDef.fromHour + 1;
+  currentPet.bornAt = Date.now() - targetHour * 3600 * 1000;
+  currentPet.lastTickAt = Date.now();
+  currentPet.stage = stageUpper;
+  currentPet.isDead = false;
+
+  // 스탯을 80으로 리프레시 (연출 보기 좋게)
+  currentPet.hunger = 80; currentPet.happy = 80; currentPet.energy = 80; currentPet.hygiene = 80;
+
+  // 해설 키 리셋 (새 단계 해설이 처음부터 노출되게)
+  delete currentPet.narrativeShownKey;
+
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'SIM',
+    text: `⚙ [시뮬] ${stageUpper} 단계로 점프 (+${targetHour}h)`,
+    type: 'admin',
+  });
+}
+
+/**
+ * 프리셋 적용: 특정 스탯/성격 조합
+ */
+async function adminPreset(preset) {
+  if (!currentUser.isAdmin) return;
+
+  const presets = {
+    full: {
+      hunger: 100, happy: 100, energy: 100, hygiene: 100,
+      log: '스탯 전체 MAX',
+    },
+    low: {
+      hunger: 15, happy: 15, energy: 15, hygiene: 15,
+      log: '스탯 전체 LOW (위기 테스트)',
+    },
+    active: {
+      personality: { activeVsCalm: 60, socialVsIntro: 60, greedVsTemperance: 20, diligentVsFree: 0 },
+      log: '활발/사교 성격 프리셋',
+    },
+    intro: {
+      personality: { activeVsCalm: -60, socialVsIntro: -60, greedVsTemperance: -20, diligentVsFree: -20 },
+      log: '내향/차분 성격 프리셋',
+    },
+    diligent: {
+      personality: { activeVsCalm: 0, socialVsIntro: -20, greedVsTemperance: -40, diligentVsFree: 60 },
+      log: '성실/절제 성격 프리셋',
+    },
+  };
+
+  const p = presets[preset];
+  if (!p) {
+    appendSystemLog(`⚠ 알 수 없는 프리셋: ${preset}`, 'warn');
+    return;
+  }
+
+  Object.entries(p).forEach(([k, v]) => {
+    if (k === 'log') return;
+    if (k === 'personality') {
+      currentPet.personality = { ...currentPet.personality, ...v };
+    } else {
+      currentPet[k] = v;
+    }
+  });
+
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'PRESET',
+    text: `⚙ [프리셋] ${p.log}`,
+    type: 'admin',
+  });
+}
+
 // ────────────────────────────────────────────────────────────
 // 시작
 // ────────────────────────────────────────────────────────────
@@ -962,12 +1108,14 @@ async function startGame() {
     // 마지막 대사 10분 이상 경과 시 자동 대사
     const last = currentPet.lastSpeech?.at || 0;
     if (Date.now() - last > 10 * 60 * 1000) {
-      const warn = getWarningSpeech(currentPet, {
+      const { fav, least } = getCrewFavorites(currentPet);
+      const vars = {
         user: currentUser.name, name: currentPet.name,
-      });
-      const spk = warn || getIdleSpeech(currentPet, {
-        user: currentUser.name, name: currentPet.name,
-      });
+        prevUser: prevUser || '누군가',
+        fav, least,
+      };
+      const warn = getWarningSpeech(currentPet, vars);
+      const spk = warn || getIdleSpeech(currentPet, vars);
       if (spk) {
         currentPet.lastSpeech = { text: spk, at: Date.now(), to: '__sys__' };
         Backend.savePet(currentPet);

@@ -1,7 +1,7 @@
-# NILAKURINJI-01 // CRIMSON OPPORTUNITY MARS II
+# CALLA-LILY-01 // CRIMSON OPPORTUNITY MARS II
 
 24명의 승무원이 2주간 공동으로 관리하는 텍스트 기반 테디베어 육성 시스템.
-세계관 『퀀텀 다이브 RE』의 닐라쿠린지호 승선 기간을 위한 미니 이벤트.
+세계관 『퀀텀 다이브 RE』의 칼라릴리호 승선 기간을 위한 미니 이벤트.
 
 ## 현재 상태
 
@@ -91,7 +91,7 @@ npx http-server -p 8000 -c-1
 ### 1. Firebase 프로젝트 생성
 
 1. https://console.firebase.google.com 접속
-2. "프로젝트 추가" → 이름 `nilakurinji` (또는 원하는 이름)
+2. "프로젝트 추가" → 이름 `calla-lily` (또는 원하는 이름)
 3. Google Analytics는 꺼도 됨
 4. 프로젝트 생성 후 → **Firestore Database** → **데이터베이스 만들기**
 5. **테스트 모드로 시작** 선택
@@ -108,9 +108,9 @@ npx http-server -p 8000 -c-1
 ```javascript
 FIREBASE: {
   apiKey: "AIza...복사한값",
-  authDomain: "nilakurinji.firebaseapp.com",
-  projectId: "nilakurinji",
-  storageBucket: "nilakurinji.appspot.com",
+  authDomain: "calla-lily.firebaseapp.com",
+  projectId: "calla-lily",
+  storageBucket: "calla-lily.appspot.com",
   messagingSenderId: "123456...",
   appId: "1:123456:web:abc..."
 },
@@ -150,7 +150,7 @@ Firebase **무료(Spark 플랜)** 내에서 100% 처리 가능:
 ### 1. 저장소 만들기
 
 1. https://github.com/new
-2. Repository name: `nilakurinji` (또는 원하는 이름)
+2. Repository name: `calla-lily` (또는 원하는 이름)
 3. **Public** 선택
 4. Create repository
 
@@ -168,7 +168,7 @@ git init
 git add .
 git commit -m "init"
 git branch -M main
-git remote add origin https://github.com/{username}/nilakurinji.git
+git remote add origin https://github.com/{username}/calla-lily.git
 git push -u origin main
 ```
 
@@ -177,7 +177,7 @@ git push -u origin main
 1. Settings → Pages
 2. Source: Deploy from a branch
 3. Branch: `main` / `/ (root)` → Save
-4. 1~2분 후 URL 표시: `https://{username}.github.io/nilakurinji/`
+4. 1~2분 후 URL 표시: `https://{username}.github.io/calla-lily/`
 
 참가자에게 이 URL 공유.
 

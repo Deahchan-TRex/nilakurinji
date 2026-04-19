@@ -48,6 +48,11 @@ export function defaultPet() {
     counters: {
       feed: 0, play: 0, sleep: 0, clean: 0, train: 0,
     },
+    // 크루별 기억: { [crewName]: { feed: n, play: n, ..., lastAction, lastAt } }
+    crewMemory: {},
+    // 최근 행동한 크루 (최근 5명, 최신이 앞)
+    recentCrew: [],
+
     lastSpeech: null,
   };
 }
