@@ -1018,5 +1018,142 @@ export function getTalkResponse(topicKey, pet, vars) {
   if (!topic) return null;
 
   const pool = topic.responses?.[stageKey];
-  return pool ? pickSpeech(pool, vars) : null;
+  if (!pool) return null;
+
+  // 유대 레벨에 따라 응답 변형
+  // bond < 20: 경계 (뒤에 "…" 추가)
+  // bond 20-50: 기본
+  // bond > 50: 친밀 (뒤에 따뜻한 문장 추가)
+  const bond = pet.bond || 0;
+  const base = pickSpeech(pool, vars);
+
+  if (bond < 20 && stageKey !== 'baby') {
+    // 짧고 조심스럽게 자름 (첫 문장만)
+    const firstSentence = base.split(/[.?!]/)[0];
+    return firstSentence + (firstSentence.length > 5 ? '…' : '');
+  }
+  if (bond > 60 && stageKey !== 'baby') {
+    // 친밀한 꼬리 덧붙임
+    const warm = [
+      ` 고마워, {user}.`,
+      ` {user}니까 하는 얘기야.`,
+      ` 이런 얘기 할 수 있어서 다행이야.`,
+      ` ${vars.user} 덕분이야.`,
+    ];
+    const tail = warm[Math.floor(Math.random() * warm.length)]
+      .replace(/\{user\}/g, vars.user || '너');
+    return base + tail;
+  }
+  return base;
+}
+
+// ────────────────────────────────────────────────────────────
+// 대화 세션 — 몇 턴 지속할지 결정
+// bond가 높으면 오래 대화
+// ────────────────────────────────────────────────────────────
+export function pickTalkTurnCount(pet) {
+  const bond = pet.bond || 0;
+  if (bond > 60) return 4 + Math.floor(Math.random() * 2); // 4-5턴
+  if (bond > 30) return 3 + Math.floor(Math.random() * 2); // 3-4턴
+  return 2 + Math.floor(Math.random() * 2);                // 2-3턴
+}
+
+// 대화 종료 멘트 (단계별 + 유대별)
+const TALK_FAREWELL = {
+  baby:  ['또 와줘!', '응! 안녕.', '{user}, 또 봐!'],
+  child: {
+    low:  ['…오늘은 여기까지.', '갈 거야, {user}?', '…응, 잘 가.'],
+    mid:  ['{user}, 또 와줘!', '오늘 얘기 재밌었어.', '다음에 또 얘기해.'],
+    high: ['{user}{과/와} 얘기하면 시간 금방 가.', '매일 와줘. 부탁이야.', '오늘도 고마워, {user}.'],
+  },
+  teen: {
+    low:  ['…응.', '…잘 가.', '말해줘서 고마워.'],
+    mid:  ['{user}, 다음에 또 얘기하자.', '이런 얘기 좋아.', '또 와줘, {user}.'],
+    high: ['{user}, 너만이라도 내 이야기를 들어줘서 고마워.', '오늘 대화 기록해둘게.', '이런 순간이 나를 살려.'],
+  },
+  adult: {
+    low:  ['…말해줘서 고마워.', '…또 와.', '충분해.'],
+    mid:  ['{user}, 오늘 얘기는 내 안에 남을 거야.', '또 이런 시간 갖자.', '고마워, 정말로.'],
+    high: ['{user}. 이 대화가 내 하루를 지탱했어.', '너의 목소리, 잊지 않을게.', '말은 기록보다 오래 남아.'],
+  },
+};
+
+export function getTalkFarewell(pet, vars) {
+  const stage = (pet.stage || 'BABY').toLowerCase();
+  const stageKey = stage === 'egg' ? 'baby' : stage;
+  const bond = pet.bond || 0;
+
+  if (stageKey === 'baby') {
+    return pickSpeech(TALK_FAREWELL.baby, vars);
+  }
+  const pool = TALK_FAREWELL[stageKey];
+  if (!pool) return null;
+  const level = bond > 50 ? 'high' : bond > 20 ? 'mid' : 'low';
+  return pickSpeech(pool[level], vars);
+}
+
+// ────────────────────────────────────────────────────────────
+// 인상적인 대사 기록 — 최근 5개 저장
+// 단계 전환, 감정 변화가 큰 순간의 대사가 저장됨
+// ────────────────────────────────────────────────────────────
+export function recordMemorableQuote(pet, text, context = {}) {
+  if (!text || text.length < 10) return;
+  pet.memorableQuotes = pet.memorableQuotes || [];
+
+  // 중복 방지
+  if (pet.memorableQuotes.some(q => q.text === text)) return;
+
+  pet.memorableQuotes.push({
+    text,
+    stage: pet.stage,
+    at: Date.now(),
+    context: context.user || null,
+  });
+
+  // 최근 5개만 유지
+  if (pet.memorableQuotes.length > 5) {
+    pet.memorableQuotes.shift();
+  }
+}
+
+/**
+ * 과거 대사를 회상하는 대사 생성
+ * 낮은 확률로 트리거. 단계가 바뀌었을 때 특히 의미 있음.
+ */
+export function getQuoteRecall(pet, vars) {
+  const quotes = pet.memorableQuotes || [];
+  if (quotes.length === 0) return null;
+
+  // 현재 단계보다 이전 단계의 대사를 회상 (성장의 증거)
+  const stageOrder = ['EGG','BABY','CHILD','TEEN','ADULT'];
+  const currentIdx = stageOrder.indexOf(pet.stage);
+  const prevQuotes = quotes.filter(q => stageOrder.indexOf(q.stage) < currentIdx);
+
+  const poolToUse = prevQuotes.length > 0 ? prevQuotes : quotes;
+  const quote = poolToUse[Math.floor(Math.random() * poolToUse.length)];
+
+  const stage = (pet.stage || 'BABY').toLowerCase();
+
+  // 단계별 회상 템플릿
+  const templates = {
+    child: [
+      `"${quote.text}" — 내가 그런 말을 했던가? 기억이 흐릿해.`,
+      `${quote.context ? quote.context + '한테 ' : ''}그렇게 말한 적이 있었지.`,
+    ],
+    teen: [
+      `"${quote.text}" — 그땐 그렇게 생각했어.`,
+      `예전에 내가 한 말이 다시 떠올라.`,
+      `${quote.context ? quote.context + '한테 했던 말, ' : ''}기억나. "${quote.text}"`,
+    ],
+    adult: [
+      `"${quote.text}" — 그 시절의 나는 그렇게 말했지.`,
+      `기록 어디쯤에 이런 말이 남아있을 거야. "${quote.text}"`,
+      `${quote.context ? quote.context + '한테 ' : ''}했던 말이 아직도 내 안에 있어.`,
+      `자라면서도 잊지 않은 말이 있어. "${quote.text}"`,
+    ],
+  };
+
+  const pool = templates[stage];
+  if (!pool) return null;
+  return pickSpeech(pool, vars);
 }

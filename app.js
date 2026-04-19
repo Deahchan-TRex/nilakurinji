@@ -4,7 +4,7 @@
 
 import { CONFIG } from './config.js';
 import { Backend } from './backend.js';
-import { renderTeddy } from './teddy.js';
+import { renderTeddy, renderTeddyBlink } from './teddy.js';
 import {
   tickStats, updateStage, applyAction, revive,
   personalityLabel, getProgress,
@@ -15,6 +15,8 @@ import {
   getActionSpeech, getWarningSpeech, getIdleSpeech,
   pickSpeech, SPEECHES, getCrewFavorites,
   getTimeGreeting, getWelcomeSpeech, getTalkTopics, getTalkResponse,
+  pickTalkTurnCount, getTalkFarewell,
+  recordMemorableQuote, getQuoteRecall,
 } from './speeches.js';
 
 // ────────────────────────────────────────────────────────────
@@ -381,6 +383,10 @@ async function handleAction(action) {
   if (!currentPet) return;
 
   tickStats(currentPet);
+
+  // 적용 전 성격 상태 저장 (변화 감지용)
+  const prevPersonality = { ...(currentPet.personality || {}) };
+
   const result = applyAction(currentPet, action, currentUser.name);
 
   if (!result.ok) {
@@ -395,7 +401,27 @@ async function handleAction(action) {
       text: `⚠ ${reasons[result.reason] || result.reason}`,
       type: 'warn',
     });
+    if (result.reason === 'tired') showEmote('sweat');
     return;
+  }
+
+  // 이모티콘 표시
+  emoteForAction(action);
+
+  // 성격 변화 감지 → 토스트
+  const personaDelta = CONFIG.PERSONALITY_DELTA[action] || {};
+  const personaLabels = {
+    activeVsCalm:      ['차분함 ↓', '활발함 ↑'],
+    greedVsTemperance: ['절제 ↓', '탐욕 ↑'],
+    socialVsIntro:     ['내향 ↓', '사교 ↑'],
+    diligentVsFree:    ['자유 ↓', '성실 ↑'],
+  };
+  for (const [axis, d] of Object.entries(personaDelta)) {
+    if (d === 0) continue;
+    const labels = personaLabels[axis];
+    if (!labels) continue;
+    const label = d > 0 ? labels[1] : labels[0];
+    showToast(`⚙ PERSONALITY: ${label} (${d > 0 ? '+' : ''}${d})`, 'personality');
   }
 
   // 크루 최애/가장 뜸한 크루 계산
@@ -439,7 +465,7 @@ function render() {
 
   // 헤더 시간
   document.getElementById('time-info').textContent =
-    `CYCLE ${String(progress.day).padStart(2,'0')}/${CONFIG.DURATION_DAYS} · ${progress.hoursLived}h`;
+    `DAY ${String(progress.day).padStart(2,'0')}/${String(CONFIG.DURATION_DAYS).padStart(2,'0')} · ${progress.hoursLived}h`;
 
   // 캐릭터 아트 (표정 동적)
   document.getElementById('pet-art').textContent = renderTeddy(currentPet);
@@ -528,14 +554,32 @@ function render() {
     `;
   }
 
-  // 로그
-  document.getElementById('log-body').innerHTML = logs.length
+  // 로그 (최신 로그 ID 기억해서 새 로그만 애니메이션)
+  const logBody = document.getElementById('log-body');
+  const lastShownAt = logBody.dataset.lastAt ? Number(logBody.dataset.lastAt) : 0;
+  let newestAt = lastShownAt;
+
+  logBody.innerHTML = logs.length
     ? logs.map(l => {
         const t = new Date(l.at).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'});
         const cls = l.type === 'warn' ? 'warn' : l.type === 'epic' ? 'epic' : l.type === 'system' ? 'system' : l.type === 'admin' ? 'admin' : '';
-        return `<tr class="${cls}"><td class="time">${t}</td><td class="user">${l.user || 'SYS'}</td><td class="action">${l.action || '-'}</td><td class="effect">${l.text || ''}</td></tr>`;
+        const isNew = l.at > lastShownAt;
+        if (l.at > newestAt) newestAt = l.at;
+        return `<tr class="${cls}${isNew ? ' log-new' : ''}"><td class="time">${t}</td><td class="user">${l.user || 'SYS'}</td><td class="action">${l.action || '-'}</td><td class="effect">${l.text || ''}</td></tr>`;
       }).join('')
     : '<tr><td colspan="4" style="text-align:center;color:#4a5f50;padding:14px;">기록 없음</td></tr>';
+
+  logBody.dataset.lastAt = newestAt;
+
+  // 로그 테이블을 자동으로 맨 아래로 스크롤 (최신이 보이게)
+  const logContainer = logBody.closest('.log-tbl');
+  if (logContainer) {
+    // 사용자가 스크롤 중이 아닐 때만 자동 스크롤
+    const isAtBottom = logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight < 30;
+    if (isAtBottom || lastShownAt === 0) {
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+  }
 
   // 성격
   document.getElementById('persona').innerHTML = `
@@ -609,6 +653,8 @@ function render() {
     });
     if (text) {
       currentPet.lastSpeech = { text, at: Date.now(), to: '__sys__' };
+      // 진화 순간의 대사는 항상 memorableQuote에 기록
+      recordMemorableQuote(currentPet, text, { user: currentUser.name });
     }
     Backend.savePet(currentPet);
     Backend.addLog({
@@ -663,6 +709,116 @@ function appendSystemLog(text, type = 'system') {
 }
 
 // ────────────────────────────────────────────────────────────
+// 픽셀 이모티콘 — 캐릭터 옆에 잠깐 떠오르는 반응
+// ────────────────────────────────────────────────────────────
+const EMOTE_PRESETS = {
+  heart:   { char: '♥', cls: 'heart' },
+  heart2:  { char: '<3', cls: 'heart' },
+  sweat:   { char: '💦', cls: 'sweat' },
+  star:    { char: '★', cls: 'star' },
+  sleep:   { char: 'Z', cls: 'sleep' },
+  sleep2:  { char: 'zzZ', cls: 'sleep' },
+  sparkle: { char: '✧', cls: 'sparkle' },
+  note:    { char: '♪', cls: 'note' },
+  angry:   { char: '!', cls: 'angry' },
+  thinking:{ char: '?', cls: 'star' },
+  bubble:  { char: '○', cls: 'sparkle' },
+};
+
+function showEmote(presetName) {
+  const preset = EMOTE_PRESETS[presetName];
+  if (!preset) return;
+
+  let layer = document.getElementById('emote-layer');
+  if (!layer) {
+    const petArt = document.getElementById('pet-art');
+    if (!petArt) return;
+    layer = document.createElement('div');
+    layer.id = 'emote-layer';
+    layer.className = 'emote-layer';
+    petArt.appendChild(layer);
+  }
+
+  const el = document.createElement('span');
+  el.className = `emote ${preset.cls}`;
+  el.textContent = preset.char;
+  // 약간의 랜덤 위치
+  el.style.left = `${Math.random() * 30 - 15}px`;
+  el.style.top = `${Math.random() * 10}px`;
+  layer.appendChild(el);
+
+  // 애니메이션 끝나면 제거
+  setTimeout(() => el.remove(), 1700);
+}
+
+// 행동별 이모티콘 매핑
+const ACTION_EMOTES = {
+  feed:  ['heart', 'sparkle', 'note'],
+  play:  ['star', 'note', 'sparkle'],
+  sleep: ['sleep', 'sleep2'],
+  clean: ['bubble', 'sparkle'],
+  train: ['sweat', 'star'],
+  talk:  ['heart2', 'note'],
+};
+
+function emoteForAction(action) {
+  const pool = ACTION_EMOTES[action];
+  if (!pool) return;
+  const picked = pool[Math.floor(Math.random() * pool.length)];
+  showEmote(picked);
+}
+
+// ────────────────────────────────────────────────────────────
+// 토스트 알림 — 우측 상단에 잠깐 떠오름
+// ────────────────────────────────────────────────────────────
+function showToast(text, type = 'default') {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = text;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+// ────────────────────────────────────────────────────────────
+// ASCII 눈 깜빡임 — 간헐적으로 눈 감았다 뜸
+// ────────────────────────────────────────────────────────────
+let blinkTimer = null;
+function startBlinking() {
+  if (blinkTimer) clearInterval(blinkTimer);
+
+  const blink = () => {
+    if (!currentPet || currentPet.isDead || currentPet.stage === 'EGG') return;
+    const petArt = document.getElementById('pet-art');
+    if (!petArt) return;
+
+    // 깜빡임 한 번
+    petArt.textContent = renderTeddyBlink(currentPet);
+    setTimeout(() => {
+      if (!currentPet) return;
+      const art = document.getElementById('pet-art');
+      if (art) art.textContent = renderTeddy(currentPet);
+    }, 150);
+  };
+
+  // 3-8초마다 무작위로 깜빡임
+  const scheduleNext = () => {
+    const delay = 3000 + Math.random() * 5000;
+    blinkTimer = setTimeout(() => {
+      blink();
+      scheduleNext();
+    }, delay);
+  };
+  scheduleNext();
+}
+
+// ────────────────────────────────────────────────────────────
 // 추가 기능
 // ────────────────────────────────────────────────────────────
 function showLore() {
@@ -689,8 +845,10 @@ function showLore() {
 }
 
 // ────────────────────────────────────────────────────────────
-// TALK 모달 — 대화 주제 선택 팝업
+// TALK 세션 — 유한 턴 대화
 // ────────────────────────────────────────────────────────────
+let talkSession = null;  // { remaining, usedTopics }
+
 function showTalkMenu() {
   if (!currentPet || currentPet.isDead) return;
   if (currentPet.stage === 'EGG') {
@@ -700,44 +858,90 @@ function showTalkMenu() {
 
   // 이미 열려있으면 닫기 (토글)
   const existing = document.getElementById('talk-modal');
-  if (existing) { existing.remove(); return; }
+  if (existing) {
+    existing.remove();
+    talkSession = null;
+    return;
+  }
 
-  const topics = getTalkTopics();
+  // 새 세션 시작
+  talkSession = {
+    remaining: pickTalkTurnCount(currentPet),
+    usedTopics: [],
+  };
+  renderTalkMenu();
+}
+
+function renderTalkMenu() {
+  if (!talkSession) return;
+
+  // 이전 모달 제거
+  const prev = document.getElementById('talk-modal');
+  if (prev) prev.remove();
+
+  // 사용한 주제 제외
+  const allTopics = getTalkTopics();
+  const available = allTopics.filter(t => !talkSession.usedTopics.includes(t.key));
+
+  if (available.length === 0 || talkSession.remaining <= 0) {
+    closeTalkSession();
+    return;
+  }
+
   const modal = document.createElement('div');
   modal.id = 'talk-modal';
   modal.className = 'talk-modal';
   modal.innerHTML = `
     <div class="talk-modal-head">
-      <span>▶ 무슨 이야기를 할까?</span>
+      <span>▶ 무슨 이야기를 할까? (남은 대화: ${talkSession.remaining}회)</span>
       <span class="talk-close" id="talk-close">✕ 닫기</span>
     </div>
     <div class="talk-modal-body">
-      ${topics.map(t => `
+      ${available.map(t => `
         <button class="talk-option" data-topic="${t.key}">${t.label}</button>
       `).join('')}
     </div>
   `;
 
-  // 말풍선 영역 위에 끼워넣기
   const wrapper = document.getElementById('speech-wrapper');
   if (wrapper && wrapper.parentNode) {
     wrapper.parentNode.insertBefore(modal, wrapper);
   }
 
-  // 닫기
-  document.getElementById('talk-close').addEventListener('click', () => modal.remove());
+  document.getElementById('talk-close').addEventListener('click', closeTalkSession);
 
-  // 주제 선택
   modal.querySelectorAll('.talk-option').forEach(btn => {
     btn.addEventListener('click', () => {
       handleTalk(btn.dataset.topic);
-      modal.remove();
     });
   });
 }
 
+async function closeTalkSession() {
+  const modal = document.getElementById('talk-modal');
+  if (modal) modal.remove();
+
+  // 종료 멘트 출력 (현재 세션이 있었을 때만)
+  if (talkSession && talkSession.usedTopics.length > 0 && currentPet && !currentPet.isDead) {
+    const { fav, least } = getCrewFavorites(currentPet);
+    const farewell = getTalkFarewell(currentPet, {
+      user: currentUser.name, name: currentPet.name, fav, least,
+    });
+    if (farewell) {
+      currentPet.lastSpeech = { text: farewell, at: Date.now(), to: currentUser.key };
+      // 세션이 충분히 길었으면 bond 더 증가
+      if (talkSession.usedTopics.length >= 3) {
+        currentPet.bond = Math.min(100, (currentPet.bond || 0) + 1);
+      }
+      await Backend.savePet(currentPet);
+    }
+  }
+  talkSession = null;
+}
+
 async function handleTalk(topicKey) {
   if (!currentPet || currentPet.isDead) return;
+  if (!talkSession) return;
 
   const { fav, least } = getCrewFavorites(currentPet);
   const vars = {
@@ -757,18 +961,26 @@ async function handleTalk(topicKey) {
   currentPet.lastSpeech = { text: response, at: Date.now(), to: currentUser.key };
   prevUser = currentUser.name;
 
+  // 인상적인 대사로 기록 (30% 확률)
+  if (Math.random() < 0.3) {
+    recordMemorableQuote(currentPet, response, { user: currentUser.name });
+  }
+
   // 대화는 happy +3 (소소한 즐거움)
   currentPet.happy = Math.min(100, currentPet.happy + 3);
   currentPet.bond = Math.min(100, (currentPet.bond || 0) + 0.3);
 
-  // 대화도 크루 기억에 기록 (약한 무게)
+  // 이모티콘
+  emoteForAction('talk');
+
+  // 크루 기억에 talk 기록
   currentPet.crewMemory = currentPet.crewMemory || {};
   const mem = currentPet.crewMemory[currentUser.name] || {
     feed: 0, play: 0, sleep: 0, clean: 0, train: 0, talk: 0,
     total: 0, lastAction: null, lastAt: 0,
   };
   mem.talk = (mem.talk || 0) + 1;
-  mem.total = (mem.total || 0) + 0.5;  // 대화는 돌봄의 절반 가중치
+  mem.total = (mem.total || 0) + 0.5;
   mem.lastAction = 'talk';
   mem.lastAt = Date.now();
   currentPet.crewMemory[currentUser.name] = mem;
@@ -779,6 +991,28 @@ async function handleTalk(topicKey) {
     text: `💬 ${SPEECHES.talkTopics[topicKey]?.label || topicKey}`,
     type: 'action',
   });
+
+  // 세션 진행
+  talkSession.usedTopics.push(topicKey);
+  talkSession.remaining -= 1;
+
+  // 잠깐 후 다음 주제 메뉴 갱신 (대사 읽을 시간)
+  setTimeout(() => {
+    if (talkSession && talkSession.remaining > 0) {
+      renderTalkMenu();
+    } else {
+      closeTalkSession();
+    }
+  }, 1800);
+
+  // 그동안 모달 비활성화
+  const modal = document.getElementById('talk-modal');
+  if (modal) {
+    modal.querySelectorAll('.talk-option').forEach(b => {
+      b.disabled = true;
+      b.style.opacity = '0.4';
+    });
+  }
 }
 
 function showHelp() {
@@ -1202,6 +1436,9 @@ async function startGame() {
   Backend.onPetChange(pet => { currentPet = pet; render(); });
   Backend.onLogsChange(newLogs => { logs = newLogs; render(); });
 
+  // 눈 깜빡임 애니메이션 시작
+  startBlinking();
+
   // 로그인 시 맞이 대사 (EGG 단계 아니고, 관리자 아닐 때)
   setTimeout(() => {
     if (!currentPet || currentPet.isDead) return;
@@ -1238,9 +1475,13 @@ async function startGame() {
         prevUser: prevUser || '누군가',
         fav, least,
       };
-      // 위기 대사 > 시간대 인사(20%) > 유휴
+      // 위기 대사 > 회상 대사(10%) > 시간대 인사(20%) > 유휴
       const warn = getWarningSpeech(currentPet, vars);
+      const shouldRecall = currentPet.stage !== 'EGG' && currentPet.stage !== 'BABY'
+                         && (currentPet.memorableQuotes?.length || 0) > 0
+                         && Math.random() < 0.1;
       const spk = warn
+        || (shouldRecall ? getQuoteRecall(currentPet, vars) : null)
         || (Math.random() < 0.2 ? getTimeGreeting(currentPet, vars) : null)
         || getIdleSpeech(currentPet, vars);
       if (spk) {

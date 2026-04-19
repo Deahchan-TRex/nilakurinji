@@ -144,6 +144,27 @@ export function renderTeddy(pet) {
 }
 
 // ────────────────────────────────────────────────────────────
+// 눈 깜빡임 프레임 (closed = true면 눈 감은 상태)
+// ────────────────────────────────────────────────────────────
+export function renderTeddyBlink(pet) {
+  const template = TEMPLATES[pet.stage] || TEMPLATES.BABY;
+  const { mouth } = decideExpression(pet);
+
+  const eyeWidth = eyeWidthFor(pet.stage);
+  // 눈 감은 상태
+  const closedEyes = {
+    baby: '- -',
+    wide: '-   -',
+  };
+  const eyeStr = closedEyes[eyeWidth];
+  const mouthChar = MOUTH[mouth] || MOUTH.default;
+
+  return template
+    .replace(/\{E\}/g, eyeStr)
+    .replace(/\{M\}/g, mouthChar);
+}
+
+// ────────────────────────────────────────────────────────────
 // 디버그용: 모든 단계 × 표정 조합 출력
 // ────────────────────────────────────────────────────────────
 export function renderAllExpressions() {

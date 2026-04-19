@@ -52,6 +52,8 @@ export function defaultPet() {
     crewMemory: {},
     // 최근 행동한 크루 (최근 5명, 최신이 앞)
     recentCrew: [],
+    // 인상적인 대사 기록 (최근 5개) — 나중에 회상용
+    memorableQuotes: [],
 
     lastSpeech: null,
   };
@@ -104,8 +106,9 @@ export const Backend = {
 
     if (CONFIG.LOCAL_TEST_MODE) {
       const logs = JSON.parse(localStorage.getItem('nk_logs') || '[]');
-      logs.unshift(log);
-      const trimmed = logs.slice(0, 50);
+      logs.push(log);  // 최신을 뒤에
+      // 로그 개수 제한: 앞(오래된 것)부터 자르기
+      const trimmed = logs.slice(-50);
       localStorage.setItem('nk_logs', JSON.stringify(trimmed));
       listeners.logs.forEach(cb => cb(trimmed));
       return;
@@ -128,7 +131,7 @@ export const Backend = {
     }
     const q = db._fns.query(
       db._fns.collection(db, 'logs'),
-      db._fns.orderBy('at', 'desc'),
+      db._fns.orderBy('at', 'asc'),
       db._fns.limit(50)
     );
     return db._fns.onSnapshot(q, snap => {
