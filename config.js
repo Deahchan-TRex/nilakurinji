@@ -103,18 +103,16 @@ export const CONFIG = {
   // ── 사망/부활 ─────────────────────────────────────────
   MAX_REVIVES: 3,
 
-  // ── Firebase 설정 (2단계에서 채움) ────────────────────
+   // ── Firebase 설정 ────────────────────────────────────
   FIREBASE: {
-    apiKey:            'YOUR_API_KEY',
-    authDomain:        'YOUR_PROJECT.firebaseapp.com',
-    projectId:         'YOUR_PROJECT_ID',
-    storageBucket:     'YOUR_PROJECT.appspot.com',
-    messagingSenderId: 'YOUR_SENDER_ID',
-    appId:             'YOUR_APP_ID',
+    apiKey:            'AIzaSyASN1ZnDEGyyO22_FdjlJVYd3ADLjfO0t0',
+    authDomain:        'calla-lily-01.firebaseapp.com',
+    projectId:         'calla-lily-01',
+    storageBucket:     'calla-lily-01.firebasestorage.app',
+    messagingSenderId: '347965378281',
+    appId:             '1:347965378281:web:8c05701a2705ead95faa78',
   },
 
   // ── 로컬 테스트 모드 ──────────────────────────────────
-  // true: localStorage로 동작 (혼자 테스트용)
-  // false: Firebase 실시간 동기화 (24명 공유)
-  LOCAL_TEST_MODE: true,
+  LOCAL_TEST_MODE: false,
 };
