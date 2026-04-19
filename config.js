@@ -64,6 +64,23 @@ export const CONFIG = {
     train: { energy: -18, hunger: -8, happy: -4, exp: 20, label: 'TRAIN', desc: '훈련하기'  },
   },
 
+  // ── FEED 서브메뉴 ────────────────────────────────────
+  // 각 종류별로 스탯 효과 약간 다름. 기본 feed에 덧씌워짐
+  FEED_MENU: [
+    { key: 'bread',   label: '따뜻한 빵',     override: { hunger: 22, happy: 5 } },
+    { key: 'soup',    label: '뜨끈한 수프',   override: { hunger: 18, happy: 6, hygiene: -1 } },
+    { key: 'fruit',   label: '붉은 과일',     override: { hunger: 15, happy: 8 } },
+    { key: 'sweet',   label: '단 것',         override: { hunger: 12, happy: 12, hygiene: -4 } },
+  ],
+
+  // ── PLAY 서브메뉴 ────────────────────────────────────
+  PLAY_MENU: [
+    { key: 'chase',   label: '술래잡기',  override: { happy: 22, energy: -15, hunger: -5 } },
+    { key: 'story',   label: '이야기하기', override: { happy: 18, energy: -5,  hunger: -2 } },
+    { key: 'hide',    label: '숨바꼭질',  override: { happy: 20, energy: -10, hunger: -3 } },
+    { key: 'draw',    label: '그림 그리기', override: { happy: 16, energy: -6,  hunger: -2 } },
+  ],
+
   // ── 행동 → 성격 영향 ─────────────────────────────────
   PERSONALITY_DELTA: {
     feed:  { greedVsTemperance: +2 },

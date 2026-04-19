@@ -17,6 +17,8 @@ import {
   getTimeGreeting, getWelcomeSpeech, getTalkTopics, getTalkResponse,
   pickTalkTurnCount, getTalkFarewell,
   recordMemorableQuote, getQuoteRecall,
+  getNextTopicChoices, getTopicBridge,
+  matchGreeting, getGreetingResponse,
 } from './speeches.js';
 
 // ────────────────────────────────────────────────────────────
@@ -237,11 +239,14 @@ function renderMain() {
   // 키보드 단축키
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
-    const map = { f: 'feed', p: 'play', s: 'sleep', c: 'clean', t: 'train', l: 'lore', k: 'talk' };
-    const act = map[e.key.toLowerCase()];
-    if (act === 'lore') showLore();
-    else if (act === 'talk') showTalkMenu();
-    else if (act) handleAction(act);
+    const key = e.key.toLowerCase();
+    if (key === 'f') showActionSubmenu('feed');
+    else if (key === 'p') showActionSubmenu('play');
+    else if (key === 's') handleAction('sleep');
+    else if (key === 'c') handleAction('clean');
+    else if (key === 't') handleAction('train');
+    else if (key === 'l') showLore();
+    else if (key === 'k') showTalkMenu();
   });
 }
 
@@ -321,6 +326,8 @@ function renderCommandButtons() {
       const act = btn.dataset.act;
       if (act === 'lore') showLore();
       else if (act === 'talk') showTalkMenu();
+      else if (act === 'feed') showActionSubmenu('feed');
+      else if (act === 'play') showActionSubmenu('play');
       else if (act === 'reset') adminReset();
       else if (act === 'edit') adminEdit();
       else if (act === 'adminrevive') adminRevive();
@@ -339,11 +346,17 @@ function renderCommandButtons() {
 // 프롬프트 명령 처리
 // ────────────────────────────────────────────────────────────
 function handleCommand(raw) {
+  // 1) 인사말 매칭 먼저 (자연어 우선)
+  const greetKey = matchGreeting(raw);
+  if (greetKey) return handleGreeting(greetKey, raw);
+
   const cmd = raw.toLowerCase();
   const [head, ...args] = cmd.split(/\s+/);
 
   // 기본 행동
-  if (['feed','play','sleep','clean','train'].includes(head)) {
+  if (head === 'feed') return showActionSubmenu('feed');
+  if (head === 'play') return showActionSubmenu('play');
+  if (['sleep','clean','train'].includes(head)) {
     handleAction(head);
     return;
   }
@@ -379,7 +392,63 @@ function handleCommand(raw) {
 // ────────────────────────────────────────────────────────────
 // 기본 행동
 // ────────────────────────────────────────────────────────────
-async function handleAction(action) {
+// ────────────────────────────────────────────────────────────
+// FEED / PLAY 서브메뉴 — 종류 선택 팝업
+// ────────────────────────────────────────────────────────────
+function showActionSubmenu(action) {
+  if (!currentPet || currentPet.isDead) return;
+  if (currentPet.stage === 'EGG') {
+    appendSystemLog(`⚠ EGG 상태에서는 ${action.toUpperCase()}할 수 없습니다.`, 'warn');
+    return;
+  }
+
+  // 이미 열려있으면 토글
+  const existing = document.getElementById('submenu-modal');
+  if (existing) { existing.remove(); return; }
+
+  const menuDef = action === 'feed' ? CONFIG.FEED_MENU
+                : action === 'play' ? CONFIG.PLAY_MENU
+                : null;
+  if (!menuDef) return;
+
+  const titles = {
+    feed: '무엇을 먹일까?',
+    play: '무엇을 하고 놀까?',
+  };
+
+  const modal = document.createElement('div');
+  modal.id = 'submenu-modal';
+  modal.className = 'talk-modal';
+  modal.innerHTML = `
+    <div class="talk-modal-head">
+      <span>▶ ${titles[action]}</span>
+      <span class="talk-close" id="submenu-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body">
+      ${menuDef.map(item => `
+        <button class="talk-option" data-key="${item.key}">${item.label}</button>
+      `).join('')}
+    </div>
+  `;
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  document.getElementById('submenu-close').addEventListener('click', () => modal.remove());
+
+  modal.querySelectorAll('.talk-option').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.key;
+      const selected = menuDef.find(m => m.key === key);
+      modal.remove();
+      handleAction(action, selected);
+    });
+  });
+}
+
+async function handleAction(action, submenuItem = null) {
   if (!currentPet) return;
 
   tickStats(currentPet);
@@ -387,7 +456,7 @@ async function handleAction(action) {
   // 적용 전 성격 상태 저장 (변화 감지용)
   const prevPersonality = { ...(currentPet.personality || {}) };
 
-  const result = applyAction(currentPet, action, currentUser.name);
+  const result = applyAction(currentPet, action, currentUser.name, submenuItem?.override);
 
   if (!result.ok) {
     const reasons = {
@@ -427,12 +496,13 @@ async function handleAction(action) {
   // 크루 최애/가장 뜸한 크루 계산
   const { fav, least } = getCrewFavorites(currentPet);
 
-  // 대사 생성
+  // 대사 생성 (서브메뉴 종류 포함)
   const speech = getActionSpeech(action, currentPet, {
     user: currentUser.name,
     prevUser: prevUser || '누군가',
     name: currentPet.name,
     fav, least,
+    submenuLabel: submenuItem?.label,
   });
   if (speech) {
     currentPet.lastSpeech = { text: speech, at: Date.now(), to: currentUser.key };
@@ -440,13 +510,18 @@ async function handleAction(action) {
   prevUser = currentUser.name;
 
   const eff = CONFIG.ACTIONS[action];
-  const effTxt = Object.entries(eff)
+  const actualEff = { ...eff, ...(submenuItem?.override || {}) };
+  const effTxt = Object.entries(actualEff)
     .filter(([k]) => !['label','desc','exp'].includes(k))
     .map(([k,v]) => `${k} ${v>0?'+':''}${v}`).join(' / ');
 
+  const actionLabel = submenuItem
+    ? `${eff.label} · ${submenuItem.label}`
+    : eff.label;
+
   await Backend.savePet(currentPet);
   await Backend.addLog({
-    user: currentUser.name, action: eff.label,
+    user: currentUser.name, action: actionLabel,
     text: effTxt || eff.desc,
     type: 'action',
   });
@@ -465,7 +540,7 @@ function render() {
 
   // 헤더 시간
   document.getElementById('time-info').textContent =
-    `DAY ${String(progress.day).padStart(2,'0')}/${String(CONFIG.DURATION_DAYS).padStart(2,'0')} · ${progress.hoursLived}h`;
+    `DAY ${String(progress.day).padStart(2,'0')} · ${progress.hoursLived}h`;
 
   // 캐릭터 아트 (표정 동적)
   document.getElementById('pet-art').textContent = renderTeddy(currentPet);
@@ -571,14 +646,10 @@ function render() {
 
   logBody.dataset.lastAt = newestAt;
 
-  // 로그 테이블을 자동으로 맨 아래로 스크롤 (최신이 보이게)
+  // 로그 테이블을 항상 맨 아래로 스크롤 (최신이 보이게)
   const logContainer = logBody.closest('.log-tbl');
   if (logContainer) {
-    // 사용자가 스크롤 중이 아닐 때만 자동 스크롤
-    const isAtBottom = logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight < 30;
-    if (isAtBottom || lastShownAt === 0) {
-      logContainer.scrollTop = logContainer.scrollHeight;
-    }
+    logContainer.scrollTop = logContainer.scrollHeight;
   }
 
   // 성격
@@ -821,6 +892,54 @@ function startBlinking() {
 // ────────────────────────────────────────────────────────────
 // 추가 기능
 // ────────────────────────────────────────────────────────────
+async function handleGreeting(greetKey, rawInput) {
+  if (!currentPet || currentPet.isDead) {
+    appendSystemLog('💭 답을 들을 수 없는 상태입니다.', 'warn');
+    return;
+  }
+  if (currentPet.stage === 'EGG') {
+    appendSystemLog('💭 아직 대답할 수 없어요. 부화를 기다려주세요.', 'system');
+    return;
+  }
+
+  const { fav, least } = getCrewFavorites(currentPet);
+  const vars = {
+    user: currentUser.name,
+    prevUser: prevUser || '누군가',
+    name: currentPet.name,
+    fav, least,
+  };
+
+  const response = getGreetingResponse(greetKey, currentPet, vars);
+  if (!response) return;
+
+  currentPet.lastSpeech = { text: response, at: Date.now(), to: currentUser.key };
+  prevUser = currentUser.name;
+
+  // 인사는 가벼운 효과
+  currentPet.happy = Math.min(100, currentPet.happy + 1);
+  currentPet.bond = Math.min(100, (currentPet.bond || 0) + 0.1);
+
+  // 이모티콘 (인사 종류에 따라)
+  const emoteMap = {
+    hello: 'note',
+    bye: 'heart2',
+    goodnight: 'sleep',
+    thanks: 'heart',
+    sorry: 'bubble',
+    love: 'heart',
+    howareyou: 'sparkle',
+  };
+  showEmote(emoteMap[greetKey] || 'bubble');
+
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'CHAT',
+    text: `💭 "${rawInput}"`,
+    type: 'action',
+  });
+}
+
 function showLore() {
   const lines = [
     '── 크림슨 오퍼튜니티 마르스 II세 ──',
@@ -839,15 +958,48 @@ function showLore() {
     '\'사슬\'이라 불리는 가느다란 끈을 통해',
     '붉은 땅과 아직 연결되어 있다 — 얼마 동안은.',
   ];
+  // 각 줄의 타임스탬프를 150ms 간격으로 강제 부여하여 순서 보장
   lines.forEach((l, i) => {
-    setTimeout(() => Backend.addLog({ user: 'SYS', action: 'LORE', text: l, type: 'system' }), i * 100);
+    setTimeout(() => {
+      Backend.addLog({ user: 'SYS', action: 'LORE', text: l, type: 'system' });
+    }, i * 150);
   });
 }
 
 // ────────────────────────────────────────────────────────────
-// TALK 세션 — 유한 턴 대화
+// TALK 시스템 — 하루 1세션, 주제가 연결되어 흘러감
+//
+// pet.dailyTalk = {
+//   dayKey: 'YYYY-MM-DD',    // 오늘 키 (KST 자정 기준)
+//   usedTopics: [...],        // 오늘 이미 쓴 주제들
+//   lastTopic: 'weather',     // 다음 연결용
+//   turnsLeft: N,             // 남은 턴
+// }
+// 새 날이 되면 자동 초기화.
+// 하루 총 4-6회 대화 가능 (유대에 따라).
 // ────────────────────────────────────────────────────────────
-let talkSession = null;  // { remaining, usedTopics }
+
+function initDailyTalk(pet) {
+  const { dayKey } = getProgress(pet);
+  const dt = pet.dailyTalk;
+
+  // 오늘 키가 다르면 리셋
+  if (!dt || dt.dayKey !== dayKey) {
+    const bond = pet.bond || 0;
+    // 유대에 따라 하루 대화 횟수 결정
+    let maxTurns = 4;
+    if (bond > 60) maxTurns = 6;
+    else if (bond > 30) maxTurns = 5;
+
+    pet.dailyTalk = {
+      dayKey,
+      usedTopics: [],
+      lastTopic: null,
+      turnsLeft: maxTurns,
+    };
+  }
+  return pet.dailyTalk;
+}
 
 function showTalkMenu() {
   if (!currentPet || currentPet.isDead) return;
@@ -858,32 +1010,51 @@ function showTalkMenu() {
 
   // 이미 열려있으면 닫기 (토글)
   const existing = document.getElementById('talk-modal');
-  if (existing) {
-    existing.remove();
-    talkSession = null;
+  if (existing) { existing.remove(); return; }
+
+  // 오늘의 대화 세션 초기화/확인
+  initDailyTalk(currentPet);
+  const dt = currentPet.dailyTalk;
+
+  if (dt.turnsLeft <= 0) {
+    appendSystemLog('💬 오늘은 이미 충분히 이야기했어. 내일 또 만나.', 'system');
     return;
   }
 
-  // 새 세션 시작
-  talkSession = {
-    remaining: pickTalkTurnCount(currentPet),
-    usedTopics: [],
-  };
   renderTalkMenu();
 }
 
 function renderTalkMenu() {
-  if (!talkSession) return;
+  if (!currentPet) return;
+  const dt = currentPet.dailyTalk;
+  if (!dt) return;
 
   // 이전 모달 제거
   const prev = document.getElementById('talk-modal');
   if (prev) prev.remove();
 
-  // 사용한 주제 제외
-  const allTopics = getTalkTopics();
-  const available = allTopics.filter(t => !talkSession.usedTopics.includes(t.key));
+  // 주제 후보 결정
+  let topicCandidates;
+  let headText;
 
-  if (available.length === 0 || talkSession.remaining <= 0) {
+  if (!dt.lastTopic) {
+    // 첫 주제 — 전체 중에서 선택
+    const allTopics = getTalkTopics();
+    topicCandidates = allTopics.filter(t => !dt.usedTopics.includes(t.key));
+    headText = '어떤 얘기부터 할까?';
+  } else {
+    // 이어지는 주제 — lastTopic의 연결 주제들
+    const nextKeys = getNextTopicChoices(dt.lastTopic, dt.usedTopics);
+    if (nextKeys.length === 0) {
+      closeTalkSession();
+      return;
+    }
+    const allTopics = getTalkTopics();
+    topicCandidates = allTopics.filter(t => nextKeys.includes(t.key));
+    headText = '이야기를 이어갈까?';
+  }
+
+  if (topicCandidates.length === 0 || dt.turnsLeft <= 0) {
     closeTalkSession();
     return;
   }
@@ -893,13 +1064,14 @@ function renderTalkMenu() {
   modal.className = 'talk-modal';
   modal.innerHTML = `
     <div class="talk-modal-head">
-      <span>▶ 무슨 이야기를 할까? (남은 대화: ${talkSession.remaining}회)</span>
+      <span>▶ ${headText} <span style="color:#8fb39a;font-weight:400;">(오늘 남은 이야기: ${dt.turnsLeft}회)</span></span>
       <span class="talk-close" id="talk-close">✕ 닫기</span>
     </div>
     <div class="talk-modal-body">
-      ${available.map(t => `
+      ${topicCandidates.map(t => `
         <button class="talk-option" data-topic="${t.key}">${t.label}</button>
       `).join('')}
+      ${dt.lastTopic ? `<button class="talk-option" data-topic="__end__" style="border-color:#c97d5f;color:#c97d5f;">✕ 이야기 마치기</button>` : ''}
     </div>
   `;
 
@@ -912,7 +1084,12 @@ function renderTalkMenu() {
 
   modal.querySelectorAll('.talk-option').forEach(btn => {
     btn.addEventListener('click', () => {
-      handleTalk(btn.dataset.topic);
+      const topic = btn.dataset.topic;
+      if (topic === '__end__') {
+        closeTalkSession();
+      } else {
+        handleTalk(topic);
+      }
     });
   });
 }
@@ -921,27 +1098,28 @@ async function closeTalkSession() {
   const modal = document.getElementById('talk-modal');
   if (modal) modal.remove();
 
-  // 종료 멘트 출력 (현재 세션이 있었을 때만)
-  if (talkSession && talkSession.usedTopics.length > 0 && currentPet && !currentPet.isDead) {
+  // 종료 멘트 (사용한 주제가 있을 때만)
+  if (currentPet && !currentPet.isDead && currentPet.dailyTalk?.usedTopics?.length > 0) {
     const { fav, least } = getCrewFavorites(currentPet);
     const farewell = getTalkFarewell(currentPet, {
       user: currentUser.name, name: currentPet.name, fav, least,
     });
     if (farewell) {
       currentPet.lastSpeech = { text: farewell, at: Date.now(), to: currentUser.key };
-      // 세션이 충분히 길었으면 bond 더 증가
-      if (talkSession.usedTopics.length >= 3) {
+
+      // 세션이 충분히 길었으면 bond 보너스
+      if (currentPet.dailyTalk.usedTopics.length >= 3) {
         currentPet.bond = Math.min(100, (currentPet.bond || 0) + 1);
       }
       await Backend.savePet(currentPet);
     }
   }
-  talkSession = null;
 }
 
 async function handleTalk(topicKey) {
   if (!currentPet || currentPet.isDead) return;
-  if (!talkSession) return;
+  const dt = currentPet.dailyTalk;
+  if (!dt || dt.turnsLeft <= 0) return;
 
   const { fav, least } = getCrewFavorites(currentPet);
   const vars = {
@@ -951,29 +1129,38 @@ async function handleTalk(topicKey) {
     fav, least,
   };
 
+  // 주제 전환 이음말 (이전 주제 있을 때)
+  let bridge = null;
+  if (dt.lastTopic && dt.lastTopic !== topicKey) {
+    bridge = getTopicBridge(dt.lastTopic, topicKey, vars);
+  }
+
+  // 주제 응답
   const response = getTalkResponse(topicKey, currentPet, vars);
   if (!response) {
     appendSystemLog('⚠ 주제를 불러오지 못했습니다.', 'warn');
     return;
   }
 
-  // 캐릭터 대사로 응답
-  currentPet.lastSpeech = { text: response, at: Date.now(), to: currentUser.key };
+  // 이음말 + 본 응답을 한 줄로 합치거나 개별 대사로 표시
+  const finalText = bridge ? `${bridge} ${response}` : response;
+
+  currentPet.lastSpeech = { text: finalText, at: Date.now(), to: currentUser.key };
   prevUser = currentUser.name;
 
-  // 인상적인 대사로 기록 (30% 확률)
+  // 인상적인 대사로 기록 (30%)
   if (Math.random() < 0.3) {
     recordMemorableQuote(currentPet, response, { user: currentUser.name });
   }
 
-  // 대화는 happy +3 (소소한 즐거움)
+  // 효과
   currentPet.happy = Math.min(100, currentPet.happy + 3);
   currentPet.bond = Math.min(100, (currentPet.bond || 0) + 0.3);
 
   // 이모티콘
   emoteForAction('talk');
 
-  // 크루 기억에 talk 기록
+  // 크루 기억
   currentPet.crewMemory = currentPet.crewMemory || {};
   const mem = currentPet.crewMemory[currentUser.name] || {
     feed: 0, play: 0, sleep: 0, clean: 0, train: 0, talk: 0,
@@ -985,6 +1172,11 @@ async function handleTalk(topicKey) {
   mem.lastAt = Date.now();
   currentPet.crewMemory[currentUser.name] = mem;
 
+  // 세션 진행
+  dt.usedTopics.push(topicKey);
+  dt.lastTopic = topicKey;
+  dt.turnsLeft -= 1;
+
   await Backend.savePet(currentPet);
   await Backend.addLog({
     user: currentUser.name, action: 'TALK',
@@ -992,20 +1184,7 @@ async function handleTalk(topicKey) {
     type: 'action',
   });
 
-  // 세션 진행
-  talkSession.usedTopics.push(topicKey);
-  talkSession.remaining -= 1;
-
-  // 잠깐 후 다음 주제 메뉴 갱신 (대사 읽을 시간)
-  setTimeout(() => {
-    if (talkSession && talkSession.remaining > 0) {
-      renderTalkMenu();
-    } else {
-      closeTalkSession();
-    }
-  }, 1800);
-
-  // 그동안 모달 비활성화
+  // 모달 비활성화 → 잠시 후 다음 메뉴
   const modal = document.getElementById('talk-modal');
   if (modal) {
     modal.querySelectorAll('.talk-option').forEach(b => {
@@ -1013,6 +1192,14 @@ async function handleTalk(topicKey) {
       b.style.opacity = '0.4';
     });
   }
+
+  setTimeout(() => {
+    if (dt.turnsLeft > 0) {
+      renderTalkMenu();
+    } else {
+      closeTalkSession();
+    }
+  }, 1800);
 }
 
 function showHelp() {

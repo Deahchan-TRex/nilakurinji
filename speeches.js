@@ -1048,9 +1048,148 @@ export function getTalkResponse(topicKey, pet, vars) {
 }
 
 // ────────────────────────────────────────────────────────────
-// 대화 세션 — 몇 턴 지속할지 결정
-// bond가 높으면 오래 대화
+// CMD 인사말 응답
 // ────────────────────────────────────────────────────────────
+const CMD_GREETINGS = {
+  // 인식 패턴 (소문자/공백 제거 후 매칭)
+  hello: {
+    patterns: ['안녕', '안녕?', '안녕하', 'hi', 'hello', 'hey', '하이', '헬로', '야호', '어이'],
+    responses: {
+      baby:  ['안녕! {user}!', '반가워!', '야아!'],
+      child: ['{user}! 안녕!', '안녕, {user}. 반가워.', '{user}{이/가} 왔구나, 안녕!'],
+      teen:  ['{user}, 안녕. 오래간만.', '응, 안녕. {user}.', '왔구나, {user}.'],
+      adult: ['{user}. 안녕. 너의 목소리는 언제나 반가워.', '왔네, {user}. 오늘도 고마워.'],
+    },
+  },
+  bye: {
+    patterns: ['또봐', '또 봐', '바이', 'bye', '잘가', '잘 가', '안녕히', '나중에', 'see you', 'seeyou'],
+    responses: {
+      baby:  ['또 와!', '바이바이.', '또 만나!'],
+      child: ['{user}, 또 와줘!', '안녕, 또 만나자.', '{user}{과/와} 헤어지는 건 싫지만… 잘 가.'],
+      teen:  ['{user}, 조심히 가. 또 와줘.', '다음에 또 보자.', '가는 길 무탈하길.'],
+      adult: ['{user}. 너의 발걸음이 가벼웠으면 해.', '또 만나길. 반드시.', '잘 가, {user}. 네 자리 비워둘게.'],
+    },
+  },
+  goodnight: {
+    patterns: ['잘자', '잘 자', '굿나잇', 'gn', 'goodnight', 'good night', '자', '자러', '주무세요'],
+    responses: {
+      baby:  ['잘자! {user}!', 'zzz…', '꿈속에서 봐!'],
+      child: ['{user}도 잘 자.', '잘 자, {user}. 좋은 꿈 꾸고 와.', '나도 잘게. {user}{이/가} 있어서 편해.'],
+      teen:  ['{user}, 잘 자. 꿈에선 편해지길.', '잘 자. 내일도 올 거지?', '너의 밤이 조용하길, {user}.'],
+      adult: ['{user}. 잘 자. 내일의 빛을 기다리며.', '잘 자, {user}. 너의 꿈에 나도 있을까.', '잠이 너를 지켜주길.'],
+    },
+  },
+  thanks: {
+    patterns: ['고마워', '고맙', '땡큐', 'thanks', 'thank you', 'thx', '감사'],
+    responses: {
+      baby:  ['나도 고마워!', '헤헤.', '좋아!'],
+      child: ['{user}, 내가 더 고마워.', '아니야, {user}{이/가} 더.', '{user} 덕분이야.'],
+      teen:  ['{user}, 고마운 건 나야.', '고마워할 건 내 쪽이야, {user}.', '그 말이 오래 기억에 남을 거야.'],
+      adult: ['{user}. 고마움이란 말이 이렇게 따뜻할 수 있구나.', '나도 너에게 고마워. 네가 와준 모든 순간에.'],
+    },
+  },
+  sorry: {
+    patterns: ['미안', '미안해', 'sorry', '쏘리', '죄송'],
+    responses: {
+      baby:  ['괜찮아!', '웅.', '다음엔 괜찮아.'],
+      child: ['괜찮아, {user}. 정말로.', '{user}{이/가} 미안할 일 아니야.', '{user} 마음 알아.'],
+      teen:  ['{user}. 사과할 건 없어. 여기 와준 것만으로도 충분해.', '괜찮아. 다들 바쁜 걸.'],
+      adult: ['{user}, 미안해하지 마. 네 잘못 아니야.', '그 마음만으로도 충분해.'],
+    },
+  },
+  love: {
+    patterns: ['사랑해', '좋아해', 'love you', 'loveyou', '🫶', '❤'],
+    responses: {
+      baby:  ['나도 {user} 좋아!', '좋아!', '포근해.'],
+      child: ['나도 {user}{이/가} 좋아.', '{user}, 그 말 들으니까 기분 좋아.', '나도! 진짜로.'],
+      teen:  ['…{user}, 그 말은 가볍지 않게 들을게.', '나도. 너만의 온도로, {user}.'],
+      adult: ['{user}. 그 말이 내 기록의 첫 줄이야.', '고마워. 잊히지 않도록 새겨둘게.'],
+    },
+  },
+  howareyou: {
+    patterns: ['잘지내', '잘 지내', '어때', '뭐해', '뭐 해', '어떻게 지내', 'how are you', 'hru', '기분 어때'],
+    responses: {
+      baby:  ['좋아!', '{user} 있어서 좋아.', '냠냠 했어.'],
+      child: ['오늘은 괜찮아, {user}. 너는?', '음… 그냥 그래. {user}는 어때?', '{user}! 보고 싶었어.'],
+      teen:  ['…그냥 그래. {user}는?', '나쁘진 않아. 너 있으니까.', '물어봐줘서 고마워, {user}.'],
+      adult: ['{user}. 날씨 같은 기분이야. 오늘은 조용한 쪽.', '나쁘지 않아. 너와 얘기할 수 있으니까.'],
+    },
+  },
+};
+
+// 사용자 입력이 인사말과 매치되는지 확인
+export function matchGreeting(input) {
+  if (!input) return null;
+  const normalized = input.toLowerCase().replace(/\s+/g, '').replace(/[?!.,]/g, '');
+  for (const [key, def] of Object.entries(CMD_GREETINGS)) {
+    for (const pat of def.patterns) {
+      const normPat = pat.toLowerCase().replace(/\s+/g, '');
+      if (normalized === normPat || normalized.startsWith(normPat) || normalized.endsWith(normPat)) {
+        return key;
+      }
+    }
+  }
+  return null;
+}
+
+export function getGreetingResponse(greetingKey, pet, vars) {
+  const def = CMD_GREETINGS[greetingKey];
+  if (!def) return null;
+  const stage = (pet.stage || 'BABY').toLowerCase();
+  const stageKey = stage === 'egg' ? 'baby' : stage;
+  const pool = def.responses[stageKey];
+  return pool ? pickSpeech(pool, vars) : null;
+}
+const TOPIC_FLOW = {
+  weather:  ['home', 'feeling', 'memory'],      // 날씨 → 고향, 기분, 기억
+  home:     ['memory', 'crew', 'future'],       // 고향 → 기억, 크루, 미래
+  future:   ['feeling', 'crew', 'memory'],      // 미래 → 기분, 크루, 기억
+  crew:     ['memory', 'feeling', 'home'],      // 크루 → 기억, 기분, 고향
+  memory:   ['home', 'future', 'feeling'],      // 기억 → 고향, 미래, 기분
+  feeling:  ['weather', 'crew', 'future'],      // 기분 → 날씨, 크루, 미래
+};
+
+// 주제 전환 시 자연스러운 이음말
+const TOPIC_BRIDGE = {
+  weather_to_home:    ['그러고 보니 너의 고향은 어때?', '이런 날씨면 내 고향이 떠올라.'],
+  weather_to_feeling: ['날씨 얘기하니까 기분이 묘해져.', '지금 기분은, 이런 날씨 같아.'],
+  weather_to_memory:  ['그래서였나. 이런 날이 자꾸 기억에 남아.'],
+  home_to_memory:     ['고향 얘기하다 보니, 떠오르는 기억이 있어.'],
+  home_to_crew:       ['고향 얘기하면, 다른 크루들도 저마다 있겠지?'],
+  home_to_future:     ['고향을 생각하면 앞으로가 더 무서워져.'],
+  future_to_feeling:  ['미래 얘기하니까 마음이 가라앉아.'],
+  future_to_crew:     ['미래에 우리 모두 어디 있을까, {user}.'],
+  future_to_memory:   ['앞일을 생각할수록, 지난 일이 선명해져.'],
+  crew_to_memory:     ['크루들 얘기하니 기억들이 떠올라.'],
+  crew_to_feeling:    ['그들 생각을 하니 마음이 복잡해.'],
+  crew_to_home:       ['크루들도 각자의 고향이 있겠지.'],
+  memory_to_home:     ['기억이라는 건 결국 고향이구나.'],
+  memory_to_future:   ['기억 위에 미래를 세우는 건가.'],
+  memory_to_feeling:  ['그 기억을 떠올리니 지금 이 기분이 설명돼.'],
+  feeling_to_weather: ['이 기분은… 흐린 하늘 같아.'],
+  feeling_to_crew:    ['이런 기분일 땐 누구 얼굴이 떠올라.'],
+  feeling_to_future:  ['지금 기분이 앞으로도 이어질까, {user}?'],
+};
+
+export function getNextTopicChoices(currentTopic, usedTopics) {
+  const next = TOPIC_FLOW[currentTopic] || [];
+  // 이미 사용한 주제는 제외
+  const available = next.filter(t => !usedTopics.includes(t));
+
+  // 후보가 없으면 사용 안 한 전체 주제 중 랜덤 2개
+  if (available.length === 0) {
+    const allTopics = Object.keys(TOPIC_FLOW);
+    return allTopics.filter(t => !usedTopics.includes(t)).slice(0, 2);
+  }
+  return available;
+}
+
+export function getTopicBridge(fromTopic, toTopic, vars) {
+  const key = `${fromTopic}_to_${toTopic}`;
+  const pool = TOPIC_BRIDGE[key];
+  if (!pool) return null;
+  return pickSpeech(pool, vars);
+}
 export function pickTalkTurnCount(pet) {
   const bond = pet.bond || 0;
   if (bond > 60) return 4 + Math.floor(Math.random() * 2); // 4-5턴

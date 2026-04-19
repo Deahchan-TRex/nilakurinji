@@ -57,7 +57,7 @@ export function updateStage(pet) {
 // ────────────────────────────────────────────────────────────
 // 행동 적용
 // ────────────────────────────────────────────────────────────
-export function applyAction(pet, action, userName = null) {
+export function applyAction(pet, action, userName = null, override = null) {
   if (pet.isDead) return { ok: false, reason: 'dead' };
   if (pet.stage === 'EGG') return { ok: false, reason: 'egg' };
 
@@ -68,7 +68,10 @@ export function applyAction(pet, action, userName = null) {
     return { ok: false, reason: 'tired' };
   }
 
-  for (const [key, val] of Object.entries(effect)) {
+  // 서브메뉴 override가 있으면 해당 값으로 덮어씀
+  const actualEffect = override ? { ...effect, ...override } : effect;
+
+  for (const [key, val] of Object.entries(actualEffect)) {
     if (['label', 'desc', 'exp'].includes(key)) continue;
     if (pet[key] !== undefined) {
       pet[key] = Math.max(0, Math.min(100, pet[key] + val));
@@ -158,13 +161,40 @@ export function personalityLabel(pet) {
 // ────────────────────────────────────────────────────────────
 // 진행률
 // ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────
+// 한국 시간 자정 기준 "DAY N" 계산
+// 리셋(bornAt) 날짜의 KST 자정을 day 1로 시작해서, 자정마다 +1
+// ────────────────────────────────────────────────────────────
+function toKstMidnight(epochMs) {
+  // KST = UTC+9. 자정은 그 날 00:00 KST
+  const kstOffsetMs = 9 * 60 * 60 * 1000;
+  const kstDate = new Date(epochMs + kstOffsetMs);
+  // KST 기준 해당 날짜의 00:00
+  kstDate.setUTCHours(0, 0, 0, 0);
+  // UTC 시각으로 되돌림
+  return kstDate.getTime() - kstOffsetMs;
+}
+
 export function getProgress(pet) {
-  const hoursLived = Math.max(0, (Date.now() - pet.bornAt) / 3600000);
+  const now = Date.now();
+  const hoursLived = Math.max(0, (now - pet.bornAt) / 3600000);
   const totalHours = CONFIG.DURATION_DAYS * 24;
+
+  // KST 자정 기준 day 계산
+  const bornMidnight = toKstMidnight(pet.bornAt);
+  const nowMidnight = toKstMidnight(now);
+  const dayDiff = Math.floor((nowMidnight - bornMidnight) / (24 * 3600000));
+  const day = Math.max(1, Math.min(CONFIG.DURATION_DAYS, dayDiff + 1));
+
+  // 오늘의 고유 키 (KST 기준 YYYY-MM-DD)
+  const kstNow = new Date(now + 9 * 3600 * 1000);
+  const dayKey = kstNow.toISOString().slice(0, 10);
+
   return {
     hoursLived: Math.floor(hoursLived),
     totalHours,
-    day: Math.max(1, Math.min(CONFIG.DURATION_DAYS, Math.floor(hoursLived / 24) + 1)),
+    day,
+    dayKey,
     percent: Math.max(0, Math.min(100, (hoursLived / totalHours) * 100)),
     finished: hoursLived >= totalHours,
   };
