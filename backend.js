@@ -144,8 +144,62 @@ export const Backend = {
       localStorage.removeItem('nk_pet');
       localStorage.removeItem('nk_logs');
       listeners.logs.forEach(cb => cb([]));
+    } else {
+      // Firebase: logs 컬렉션 전체 삭제
+      try {
+        const logsSnap = await db._fns.getDocs(db._fns.collection(db, 'logs'));
+        const deletePromises = logsSnap.docs.map(d =>
+          db._fns.deleteDoc(db._fns.doc(db, 'logs', d.id))
+        );
+        await Promise.all(deletePromises);
+      } catch (err) {
+        console.error('로그 삭제 실패:', err);
+      }
     }
     await this.savePet(defaultPet());
+  },
+
+  // ────────────────────────────────────────────────────
+  // Presence (동접자) — 2분마다 heartbeat, 5분 이상이면 오프라인 판정
+  // ────────────────────────────────────────────────────
+  async updatePresence(userName) {
+    if (CONFIG.LOCAL_TEST_MODE) {
+      // 로컬 모드: 본인 기록만 저장 (실제 공유 X)
+      const presence = JSON.parse(localStorage.getItem('nk_presence') || '{}');
+      presence[userName] = Date.now();
+      localStorage.setItem('nk_presence', JSON.stringify(presence));
+      return;
+    }
+    try {
+      await db._fns.setDoc(
+        db._fns.doc(db, 'presence', userName),
+        { at: db._fns.serverTimestamp(), name: userName }
+      );
+    } catch (err) {
+      console.error('presence 업데이트 실패:', err);
+    }
+  },
+
+  onPresenceChange(callback) {
+    if (CONFIG.LOCAL_TEST_MODE) {
+      // 로컬: 본인만 표시
+      const presence = JSON.parse(localStorage.getItem('nk_presence') || '{}');
+      callback(presence);
+      return;
+    }
+    return db._fns.onSnapshot(
+      db._fns.collection(db, 'presence'),
+      snap => {
+        const map = {};
+        snap.docs.forEach(d => {
+          const data = d.data();
+          // Firestore Timestamp → ms
+          const at = data.at?.toMillis ? data.at.toMillis() : Date.now();
+          map[d.id] = at;
+        });
+        callback(map);
+      }
+    );
   },
 
   // 관리자용: 백업/복원

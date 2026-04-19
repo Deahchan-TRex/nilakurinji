@@ -383,7 +383,16 @@ body {
 .log-tbl td { padding: 5px 10px; color: #8fb39a; }
 .log-tbl .time { color: #4a5f50; font-size: 11px; width: 60px; }
 .log-tbl .user { color: #03B352; font-weight: 500; width: 70px; }
-.log-tbl .action { color: #8fb39a; width: 78px; font-size: 11px; letter-spacing: 1px; }
+.log-tbl .action {
+  color: #8fb39a;
+  width: 110px;
+  min-width: 110px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .log-tbl .effect { color: #6b8f76; font-size: 11px; }
 .log-tbl tr.warn td { color: #c97d5f; }
 .log-tbl tr.epic td { color: #03B352; font-weight: 500; }
@@ -810,7 +819,7 @@ body {
   .log-tbl td { padding: 4px 7px; }
   .log-tbl .time { font-size: 10px; width: 50px; }
   .log-tbl .user { font-size: 11px; width: 55px; }
-  .log-tbl .action, .log-tbl thead th:nth-child(3) { display: none; }
+  .log-tbl .action { width: 70px; min-width: 70px; font-size: 10px; }
   .log-tbl .effect { font-size: 10px; }
 
   /* 성격 */

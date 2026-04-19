@@ -28,6 +28,7 @@ let currentUser = null;   // { name, key, isAdmin }
 let currentPet = null;
 let logs = [];
 let prevUser = null;
+let presenceMap = {};     // { userName: lastSeenMs }
 
 // ────────────────────────────────────────────────────────────
 // 로그인 화면
@@ -57,9 +58,9 @@ function renderLogin() {
             이 름 &nbsp;&nbsp;&nbsp;&nbsp;: <span class="hl">크림슨 오퍼튜니티 마르스 II</span><br>
             온 곳 &nbsp;&nbsp;&nbsp;&nbsp;: <span class="hl">붉은 땅</span> / 기회를 쫓던 이들의 자리<br>
             아 버 지 &nbsp;: <span class="warn">크림슨 오퍼튜니티 마르스 I — 그 땅에 묻혔다</span><br>
-            이 름 의 뜻 : 오래전 붉은 행성을 걸었던 탐사선을 기린다<br>
-            상 태 &nbsp;&nbsp;&nbsp;&nbsp;: 꽃잎에 싸여 대기 / <span class="hl">COHORT 087</span> 명단<br>
-            부 기 &nbsp;&nbsp;&nbsp;&nbsp;: '사슬' 한 가닥 허용 — 고향과 겨우 이어진 실
+            이름의 뜻 : 오래전 붉은 행성을 걸었던 탐사선을 기린다<br>
+            명 단 &nbsp;&nbsp;&nbsp;&nbsp;: <span class="hl">COHORT 087</span> 수송 대기<br>
+            비 고 &nbsp;&nbsp;&nbsp;&nbsp;: '사슬' 한 가닥 허용 — 고향과 겨우 이어진 실
           </div>
         </div>
 
@@ -138,9 +139,8 @@ function renderMain() {
                 <div class="full">${CONFIG.PET_FULLNAME}</div>
                 <div class="origin">◣ ${CONFIG.PET_ORIGIN} ◥</div>
               </div>
-              <div class="pet-tags">
+              <div class="pet-tags" id="pet-tags">
                 <span class="tag">FROM MARS</span>
-                <span class="tag">AGE 13</span>
                 <span class="tag">SHACKLE</span>
               </div>
               <div style="border-top:1px solid #2d5a3e;padding-top:8px;" id="pet-extras"></div>
@@ -546,6 +546,24 @@ function render() {
   document.getElementById('pet-art').textContent = renderTeddy(currentPet);
   document.getElementById('stage-badge').textContent = currentPet.stage;
 
+  // 단계별 태그
+  const stageTags = {
+    EGG:   [{ text: '포장 중', class: '' }, { text: '수송 대기', class: '' }],
+    BABY:  [{ text: '갓 부화', class: '' }, { text: '꽃봉오리', class: '' }],
+    CHILD: [{ text: '유년기', class: '' }, { text: 'AGE ~5', class: '' }],
+    TEEN:  [{ text: '청소년기', class: '' }, { text: 'AGE ~12', class: '' }],
+    ADULT: [{ text: '성년기', class: '' }, { text: 'AGE 13+', class: '' }, { text: '분류 대상', class: '' }],
+  };
+  const tagsEl = document.getElementById('pet-tags');
+  if (tagsEl) {
+    const tags = stageTags[currentPet.stage] || [];
+    tagsEl.innerHTML = `
+      <span class="tag">FROM MARS</span>
+      ${tags.map(t => `<span class="tag ${t.class}">${t.text}</span>`).join('')}
+      <span class="tag">SHACKLE</span>
+    `;
+  }
+
   // 부가 스탯 - EGG일 땐 승선 타임라인으로 대체
   if (currentPet.stage === 'EGG') {
     const hoursLived = Math.max(0, (Date.now() - currentPet.bornAt) / 3600000);
@@ -634,8 +652,13 @@ function render() {
   const lastShownAt = logBody.dataset.lastAt ? Number(logBody.dataset.lastAt) : 0;
   let newestAt = lastShownAt;
 
-  logBody.innerHTML = logs.length
-    ? logs.map(l => {
+  // 개인용 archive 필터링: viewer 필드가 없거나 본인인 것만
+  const visibleLogs = logs.filter(l =>
+    !l.viewer || l.viewer === currentUser.name
+  );
+
+  logBody.innerHTML = visibleLogs.length
+    ? visibleLogs.map(l => {
         const t = new Date(l.at).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'});
         const cls = l.type === 'warn' ? 'warn' : l.type === 'epic' ? 'epic' : l.type === 'system' ? 'system' : l.type === 'admin' ? 'admin' : '';
         const isNew = l.at > lastShownAt;
@@ -661,20 +684,38 @@ function render() {
     <div class="persona-label">◆ ${personalityLabel(currentPet)} ◆</div>
   `;
 
-  // 크루 (본인만 표시 — 페이지 길이 축소)
+  // 크루 리스트 — 동접자 표시
+  const ONLINE_WINDOW = 5 * 60 * 1000; // 5분 이내 heartbeat = 온라인
+  const now = Date.now();
+  const onlineCrew = [];
+  const offlineCrew = [];
+
+  for (const m of CONFIG.MEMBERS) {
+    const lastSeen = presenceMap[m.name];
+    const isOnline = lastSeen && (now - lastSeen) < ONLINE_WINDOW;
+    const isMe = m.name === currentUser.name;
+    if (isOnline || isMe) onlineCrew.push({ name: m.name, isMe });
+    else offlineCrew.push({ name: m.name });
+  }
+
+  // 본인이 맨 위, 온라인 크루, 오프라인 요약
   document.getElementById('crew-list').innerHTML = `
     <table>
-      <tr class="me">
-        <td class="dot">●</td>
-        <td>${currentUser.name} (ME)</td>
-      </tr>
-      <tr class="off" style="font-size:10px;">
-        <td class="dot">·</td>
-        <td style="color:#6b8f76;">외 ${CONFIG.MEMBERS.length - 1}명</td>
-      </tr>
+      ${onlineCrew.map(c => `
+        <tr class="${c.isMe ? 'me' : 'on'}">
+          <td class="dot">●</td>
+          <td>${c.name}${c.isMe ? ' (ME)' : ''}</td>
+        </tr>
+      `).join('')}
+      ${offlineCrew.length > 0 ? `
+        <tr class="off" style="font-size:10px;">
+          <td class="dot">·</td>
+          <td style="color:#6b8f76;">외 ${offlineCrew.length}명 (오프라인)</td>
+        </tr>
+      ` : ''}
     </table>
   `;
-  document.getElementById('crew-online').textContent = '01';
+  document.getElementById('crew-online').textContent = String(onlineCrew.length).padStart(2, '0');
 
   // 미션 진행률
   document.getElementById('mission').innerHTML = `
@@ -694,12 +735,17 @@ function render() {
   });
 
   // 모든 단계: 시간대별 아카이브 해설 자동 노출
-  // 단계가 바뀌면 키가 바뀌므로 새 단계에서도 처음부터 다시 노출됨
+  // 각 크루가 새로 접속/갱신 시점에 자기 기준으로 확인
+  // narrativeShownKeyBy: { [userName]: lastSeenKey } — 개인별 중복 방지
   const narrativeKey = getStageNarrativeKey(currentPet);
-  if (narrativeKey && currentPet.narrativeShownKey !== narrativeKey) {
+  const viewerName = currentUser.name;
+  currentPet.narrativeShownKeyBy = currentPet.narrativeShownKeyBy || {};
+  const lastShown = currentPet.narrativeShownKeyBy[viewerName];
+
+  if (narrativeKey && lastShown !== narrativeKey) {
     const narrative = getStageNarrative(currentPet);
     if (narrative) {
-      currentPet.narrativeShownKey = narrativeKey;
+      currentPet.narrativeShownKeyBy[viewerName] = narrativeKey;
 
       // EGG 단계에서는 말풍선 자리를 해설이 차지 (캐릭터가 말을 못 하니까)
       // BABY 이후부터는 캐릭터 대사를 방해하지 않도록 로그에만 기록
@@ -708,10 +754,12 @@ function render() {
       }
 
       Backend.savePet(currentPet);
+      // viewerName을 심어서 "이 유저에게만 보이는 로그"로 기록
       Backend.addLog({
         user: null, action: 'ARCHIVE',
         text: narrative.text,
         type: 'system',
+        viewer: viewerName,  // 이 필드가 있으면 해당 유저에게만 보임
       });
     }
   }
@@ -1622,6 +1670,19 @@ async function startGame() {
 
   Backend.onPetChange(pet => { currentPet = pet; render(); });
   Backend.onLogsChange(newLogs => { logs = newLogs; render(); });
+
+  // 동접자(presence) 구독 & heartbeat
+  Backend.onPresenceChange(map => {
+    presenceMap = map;
+    render();
+  });
+
+  // 관리자는 presence에 잡히지 않도록
+  if (!currentUser.isAdmin) {
+    Backend.updatePresence(currentUser.name);
+    // 2분마다 heartbeat
+    setInterval(() => Backend.updatePresence(currentUser.name), 2 * 60 * 1000);
+  }
 
   // 눈 깜빡임 애니메이션 시작
   startBlinking();
