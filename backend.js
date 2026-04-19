@@ -55,7 +55,10 @@ export function defaultPet() {
     // 인상적인 대사 기록 (최근 5개) — 나중에 회상용
     memorableQuotes: [],
 
+    // 공용 마지막 대사 (누가 봐도 보이는 것 - 진화 순간 등)
     lastSpeech: null,
+    // 유저별 개인 대사: { [userName]: { text, at, to } }
+    lastSpeechBy: {},
   };
 }
 
@@ -102,19 +105,22 @@ export const Backend = {
   },
 
   async addLog(entry) {
-    const log = { ...entry, at: Date.now() };
+    const nowMs = Date.now();
 
     if (CONFIG.LOCAL_TEST_MODE) {
+      const log = { ...entry, at: nowMs };
       const logs = JSON.parse(localStorage.getItem('nk_logs') || '[]');
-      logs.push(log);  // 최신을 뒤에
-      // 로그 개수 제한: 앞(오래된 것)부터 자르기
+      logs.push(log);
       const trimmed = logs.slice(-50);
       localStorage.setItem('nk_logs', JSON.stringify(trimmed));
       listeners.logs.forEach(cb => cb(trimmed));
       return;
     }
+    // Firebase: 서버 타임스탬프(정확성) + atMs(즉시 표시용 fallback) 동시 저장
     await db._fns.addDoc(db._fns.collection(db, 'logs'), {
-      ...entry, at: db._fns.serverTimestamp(),
+      ...entry,
+      at: db._fns.serverTimestamp(),
+      atMs: nowMs,  // 서버 타임이 확정되기 전에도 정렬/표시 가능하게
     });
   },
 
@@ -131,11 +137,20 @@ export const Backend = {
     }
     const q = db._fns.query(
       db._fns.collection(db, 'logs'),
-      db._fns.orderBy('at', 'asc'),
+      db._fns.orderBy('atMs', 'asc'),
       db._fns.limit(50)
     );
     return db._fns.onSnapshot(q, snap => {
-      callback(snap.docs.map(d => d.data()));
+      const arr = snap.docs.map(d => {
+        const data = d.data();
+        // at을 ms 숫자로 정규화 (serverTimestamp가 아직 pending이면 atMs 사용)
+        let atMs = data.atMs || 0;
+        if (data.at?.toMillis) {
+          atMs = data.at.toMillis();
+        }
+        return { ...data, at: atMs, _id: d.id };
+      });
+      callback(arr);
     });
   },
 
@@ -164,7 +179,6 @@ export const Backend = {
   // ────────────────────────────────────────────────────
   async updatePresence(userName) {
     if (CONFIG.LOCAL_TEST_MODE) {
-      // 로컬 모드: 본인 기록만 저장 (실제 공유 X)
       const presence = JSON.parse(localStorage.getItem('nk_presence') || '{}');
       presence[userName] = Date.now();
       localStorage.setItem('nk_presence', JSON.stringify(presence));
@@ -173,7 +187,11 @@ export const Backend = {
     try {
       await db._fns.setDoc(
         db._fns.doc(db, 'presence', userName),
-        { at: db._fns.serverTimestamp(), name: userName }
+        {
+          at: db._fns.serverTimestamp(),
+          atMs: Date.now(),  // serverTimestamp pending 대응
+          name: userName,
+        }
       );
     } catch (err) {
       console.error('presence 업데이트 실패:', err);
@@ -182,7 +200,6 @@ export const Backend = {
 
   onPresenceChange(callback) {
     if (CONFIG.LOCAL_TEST_MODE) {
-      // 로컬: 본인만 표시
       const presence = JSON.parse(localStorage.getItem('nk_presence') || '{}');
       callback(presence);
       return;
@@ -193,13 +210,143 @@ export const Backend = {
         const map = {};
         snap.docs.forEach(d => {
           const data = d.data();
-          // Firestore Timestamp → ms
-          const at = data.at?.toMillis ? data.at.toMillis() : Date.now();
-          map[d.id] = at;
+          // at을 ms로 정규화 (서버 타임 우선, 없으면 atMs)
+          let atMs = data.atMs || 0;
+          if (data.at?.toMillis) {
+            atMs = data.at.toMillis();
+          }
+          map[d.id] = atMs;
         });
         callback(map);
       }
     );
+  },
+
+  // ────────────────────────────────────────────────────
+  // 스냅샷 (롤백용)
+  // ────────────────────────────────────────────────────
+  async saveSnapshot(pet, label, type = 'manual') {
+    const atMs = Date.now();
+    const snap = {
+      pet: JSON.parse(JSON.stringify(pet)),  // deep copy
+      atMs, label, type,
+    };
+
+    if (CONFIG.LOCAL_TEST_MODE) {
+      const snaps = JSON.parse(localStorage.getItem('nk_snapshots') || '[]');
+      snaps.push({ ...snap, _id: `local_${atMs}` });
+      // 오래된 것부터 정리: auto는 24개, manual은 10개 제한
+      const autos = snaps.filter(s => s.type === 'auto').sort((a,b) => b.atMs - a.atMs);
+      const manuals = snaps.filter(s => s.type === 'manual').sort((a,b) => b.atMs - a.atMs);
+      const kept = [...autos.slice(0, 24), ...manuals.slice(0, 10)];
+      localStorage.setItem('nk_snapshots', JSON.stringify(kept));
+      return;
+    }
+    // Firebase
+    await db._fns.addDoc(db._fns.collection(db, 'snapshots'), {
+      ...snap,
+      at: db._fns.serverTimestamp(),
+    });
+    // 오래된 자동 스냅샷 정리 (24개 넘으면)
+    await this._pruneSnapshots();
+  },
+
+  async _pruneSnapshots() {
+    if (CONFIG.LOCAL_TEST_MODE) return;
+    try {
+      // 자동 스냅샷 24개 초과 분 삭제
+      const autoQuery = db._fns.query(
+        db._fns.collection(db, 'snapshots'),
+        db._fns.where('type', '==', 'auto'),
+        db._fns.orderBy('atMs', 'desc')
+      );
+      const autoSnap = await db._fns.getDocs(autoQuery);
+      if (autoSnap.docs.length > 24) {
+        const toDelete = autoSnap.docs.slice(24);
+        await Promise.all(toDelete.map(d =>
+          db._fns.deleteDoc(db._fns.doc(db, 'snapshots', d.id))
+        ));
+      }
+      // 수동 스냅샷 10개 초과 분 삭제
+      const manualQuery = db._fns.query(
+        db._fns.collection(db, 'snapshots'),
+        db._fns.where('type', '==', 'manual'),
+        db._fns.orderBy('atMs', 'desc')
+      );
+      const manualSnap = await db._fns.getDocs(manualQuery);
+      if (manualSnap.docs.length > 10) {
+        const toDelete = manualSnap.docs.slice(10);
+        await Promise.all(toDelete.map(d =>
+          db._fns.deleteDoc(db._fns.doc(db, 'snapshots', d.id))
+        ));
+      }
+    } catch (err) {
+      console.error('스냅샷 정리 실패:', err);
+    }
+  },
+
+  async listSnapshots() {
+    if (CONFIG.LOCAL_TEST_MODE) {
+      const snaps = JSON.parse(localStorage.getItem('nk_snapshots') || '[]');
+      return snaps.sort((a, b) => b.atMs - a.atMs);
+    }
+    const q = db._fns.query(
+      db._fns.collection(db, 'snapshots'),
+      db._fns.orderBy('atMs', 'desc')
+    );
+    const snap = await db._fns.getDocs(q);
+    return snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+  },
+
+  async restoreSnapshot(snapshotId, { deleteLaterLogs = false } = {}) {
+    let snapshot;
+    if (CONFIG.LOCAL_TEST_MODE) {
+      const snaps = JSON.parse(localStorage.getItem('nk_snapshots') || '[]');
+      snapshot = snaps.find(s => s._id === snapshotId);
+    } else {
+      const docRef = db._fns.doc(db, 'snapshots', snapshotId);
+      const docSnap = await db._fns.getDoc(docRef);
+      if (!docSnap.exists()) return { ok: false, reason: 'not_found' };
+      snapshot = { _id: docSnap.id, ...docSnap.data() };
+    }
+    if (!snapshot) return { ok: false, reason: 'not_found' };
+
+    // pet 복원
+    await this.savePet(snapshot.pet);
+
+    // 옵션: 복원 시점 이후 로그 삭제
+    if (deleteLaterLogs) {
+      if (CONFIG.LOCAL_TEST_MODE) {
+        const logs = JSON.parse(localStorage.getItem('nk_logs') || '[]');
+        const filtered = logs.filter(l => (l.at || 0) <= snapshot.atMs);
+        localStorage.setItem('nk_logs', JSON.stringify(filtered));
+        listeners.logs.forEach(cb => cb(filtered));
+      } else {
+        try {
+          const lq = db._fns.query(
+            db._fns.collection(db, 'logs'),
+            db._fns.where('atMs', '>', snapshot.atMs)
+          );
+          const lsnap = await db._fns.getDocs(lq);
+          await Promise.all(lsnap.docs.map(d =>
+            db._fns.deleteDoc(db._fns.doc(db, 'logs', d.id))
+          ));
+        } catch (err) {
+          console.error('로그 삭제 실패:', err);
+        }
+      }
+    }
+    return { ok: true, snapshot };
+  },
+
+  async deleteSnapshot(snapshotId) {
+    if (CONFIG.LOCAL_TEST_MODE) {
+      const snaps = JSON.parse(localStorage.getItem('nk_snapshots') || '[]');
+      const filtered = snaps.filter(s => s._id !== snapshotId);
+      localStorage.setItem('nk_snapshots', JSON.stringify(filtered));
+      return;
+    }
+    await db._fns.deleteDoc(db._fns.doc(db, 'snapshots', snapshotId));
   },
 
   // 관리자용: 백업/복원

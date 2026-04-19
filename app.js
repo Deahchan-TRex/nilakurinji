@@ -279,8 +279,8 @@ function renderCommandButtons() {
       <button class="cmd admin" data-act="reset">[R] RESET</button>
       <button class="cmd admin" data-act="edit">[E] EDIT</button>
       <button class="cmd admin" data-act="adminrevive">[V] REVIVE</button>
-      <button class="cmd admin" data-act="backup">[B] BACKUP</button>
-      <button class="cmd" data-act="lore">[L] LORE</button>
+      <button class="cmd admin" data-act="snapshotsave">💾 SNAP</button>
+      <button class="cmd admin" data-act="snapshotlist">♻ RESTORE</button>
       <button class="cmd" data-act="logout">[X] LOGOUT</button>
     `;
 
@@ -316,8 +316,8 @@ function renderCommandButtons() {
       <button class="cmd admin" data-act="preset-low">스탯 LOW</button>
       <button class="cmd admin" data-act="preset-active">활발/사교</button>
       <button class="cmd admin" data-act="preset-intro">내향/차분</button>
-      <button class="cmd admin" data-act="preset-diligent">성실/절제</button>
-      <button class="cmd admin" data-act="status">STATUS</button>
+      <button class="cmd admin" data-act="backup">JSON 백업</button>
+      <button class="cmd" data-act="lore">LORE</button>
     `;
   }
 
@@ -332,6 +332,8 @@ function renderCommandButtons() {
       else if (act === 'edit') adminEdit();
       else if (act === 'adminrevive') adminRevive();
       else if (act === 'backup') adminBackup();
+      else if (act === 'snapshotsave') adminSnapshotSave();
+      else if (act === 'snapshotlist') adminSnapshotList();
       else if (act === 'logout') doLogout();
       else if (act === 'help') showHelp();
       else if (act === 'status') adminStatus();
@@ -375,6 +377,8 @@ function handleCommand(raw) {
   if (head === 'reset') return adminReset();
   if (head === 'revive') return adminRevive();
   if (head === 'backup') return adminBackup();
+  if (head === 'snapshot' || head === 'snap') return adminSnapshotSave();
+  if (head === 'restore' || head === 'snapshots') return adminSnapshotList();
   if (head === 'restore') return adminRestore();
   if (head === 'kill') return adminKill();
   if (head === 'evolve') return adminEvolve(args[0]);
@@ -505,7 +509,7 @@ async function handleAction(action, submenuItem = null) {
     submenuLabel: submenuItem?.label,
   });
   if (speech) {
-    currentPet.lastSpeech = { text: speech, at: Date.now(), to: currentUser.key };
+    saveSpeechForUser(currentPet, currentUser.name, { text: speech, at: Date.now(), to: currentUser.key });
   }
   prevUser = currentUser.name;
 
@@ -636,11 +640,17 @@ function render() {
       </div>
     `;
   } else {
-    const lastSpeech = currentPet.lastSpeech;
+    // 개인 대사가 있으면 그것을, 없으면 공용 대사 (최신 기준)
+    const lastSpeech = getVisibleSpeech(currentPet, currentUser.name);
+    // "~에게" 표시: 개인 대사라면 본인에게 한 말이니 표시 안 함 (중복 제거)
+    const showAddressee = lastSpeech?.to
+      && lastSpeech.to !== '__sys__'
+      && lastSpeech.to !== '__admin__'
+      && lastSpeech.to !== currentUser.key;
     speechWrapper.innerHTML = `
       <div class="speech">
         <div class="speech-head">
-          <span>▶ ${currentPet.name} · ${lastSpeech ? timeAgo(lastSpeech.at) : '–'}${lastSpeech?.to && lastSpeech.to !== '__sys__' ? ' · ' + getUserNameByKey(lastSpeech.to) + '에게' : ''}</span>
+          <span>▶ ${currentPet.name} · ${lastSpeech ? timeAgo(lastSpeech.at) : '–'}${showAddressee ? ' · ' + getUserNameByKey(lastSpeech.to) + '에게' : ''}</span>
         </div>
         <div class="speech-body">${lastSpeech?.text || '…'}</div>
       </div>
@@ -659,10 +669,13 @@ function render() {
 
   logBody.innerHTML = visibleLogs.length
     ? visibleLogs.map(l => {
-        const t = new Date(l.at).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'});
+        const atMs = Number(l.at) || 0;
+        const t = atMs > 0
+          ? new Date(atMs).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'})
+          : '--:--';
         const cls = l.type === 'warn' ? 'warn' : l.type === 'epic' ? 'epic' : l.type === 'system' ? 'system' : l.type === 'admin' ? 'admin' : '';
-        const isNew = l.at > lastShownAt;
-        if (l.at > newestAt) newestAt = l.at;
+        const isNew = atMs > lastShownAt;
+        if (atMs > newestAt) newestAt = atMs;
         return `<tr class="${cls}${isNew ? ' log-new' : ''}"><td class="time">${t}</td><td class="user">${l.user || 'SYS'}</td><td class="action">${l.action || '-'}</td><td class="effect">${l.text || ''}</td></tr>`;
       }).join('')
     : '<tr><td colspan="4" style="text-align:center;color:#4a5f50;padding:14px;">기록 없음</td></tr>';
@@ -748,9 +761,11 @@ function render() {
       currentPet.narrativeShownKeyBy[viewerName] = narrativeKey;
 
       // EGG 단계에서는 말풍선 자리를 해설이 차지 (캐릭터가 말을 못 하니까)
-      // BABY 이후부터는 캐릭터 대사를 방해하지 않도록 로그에만 기록
+      // 개인 대사로 저장해 보는 사람 기준으로 표시
       if (currentPet.stage === 'EGG') {
-        currentPet.lastSpeech = { text: narrative.text, at: Date.now(), to: '__sys__' };
+        saveSpeechForUser(currentPet, viewerName, {
+          text: narrative.text, at: Date.now(), to: viewerName,
+        });
       }
 
       Backend.savePet(currentPet);
@@ -771,7 +786,7 @@ function render() {
       user: currentUser.name, name: currentPet.name,
     });
     if (text) {
-      currentPet.lastSpeech = { text, at: Date.now(), to: '__sys__' };
+      saveBroadcastSpeech(currentPet, { text, at: Date.now(), to: '__sys__' });
       // 진화 순간의 대사는 항상 memorableQuote에 기록
       recordMemorableQuote(currentPet, text, { user: currentUser.name });
     }
@@ -825,6 +840,35 @@ function getUserNameByKey(key) {
 
 function appendSystemLog(text, type = 'system') {
   Backend.addLog({ user: 'SYS', action: 'MSG', text, type });
+}
+
+// ────────────────────────────────────────────────────────────
+// 개인 대사 저장/조회 헬퍼
+// 특정 유저에게 한 대사는 그 유저에게만 말풍선으로 보임
+// 공용 대사(진화 순간 등)는 lastSpeech에만 저장되어 모두에게 보임
+// ────────────────────────────────────────────────────────────
+function saveSpeechForUser(pet, userName, speechObj) {
+  if (!pet || !userName) return;
+  pet.lastSpeechBy = pet.lastSpeechBy || {};
+  pet.lastSpeechBy[userName] = speechObj;
+}
+
+function saveBroadcastSpeech(pet, speechObj) {
+  // 공용 대사 - 모든 유저에게 보임
+  if (!pet) return;
+  pet.lastSpeech = speechObj;
+}
+
+function getVisibleSpeech(pet, userName) {
+  if (!pet) return null;
+  const personal = pet.lastSpeechBy?.[userName];
+  const broadcast = pet.lastSpeech;
+
+  // 둘 중 최신 것 (단, 개인 대사가 우선)
+  if (personal && broadcast) {
+    return (personal.at || 0) >= (broadcast.at || 0) ? personal : broadcast;
+  }
+  return personal || broadcast || null;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -961,7 +1005,7 @@ async function handleGreeting(greetKey, rawInput) {
   const response = getGreetingResponse(greetKey, currentPet, vars);
   if (!response) return;
 
-  currentPet.lastSpeech = { text: response, at: Date.now(), to: currentUser.key };
+  saveSpeechForUser(currentPet, currentUser.name, { text: response, at: Date.now(), to: currentUser.key });
   prevUser = currentUser.name;
 
   // 인사는 가벼운 효과
@@ -1153,7 +1197,7 @@ async function closeTalkSession() {
       user: currentUser.name, name: currentPet.name, fav, least,
     });
     if (farewell) {
-      currentPet.lastSpeech = { text: farewell, at: Date.now(), to: currentUser.key };
+      saveSpeechForUser(currentPet, currentUser.name, { text: farewell, at: Date.now(), to: currentUser.key });
 
       // 세션이 충분히 길었으면 bond 보너스
       if (currentPet.dailyTalk.usedTopics.length >= 3) {
@@ -1193,7 +1237,7 @@ async function handleTalk(topicKey) {
   // 이음말 + 본 응답을 한 줄로 합치거나 개별 대사로 표시
   const finalText = bridge ? `${bridge} ${response}` : response;
 
-  currentPet.lastSpeech = { text: finalText, at: Date.now(), to: currentUser.key };
+  saveSpeechForUser(currentPet, currentUser.name, { text: finalText, at: Date.now(), to: currentUser.key });
   prevUser = currentUser.name;
 
   // 인상적인 대사로 기록 (30%)
@@ -1293,7 +1337,7 @@ async function doRevive() {
     return;
   }
   const text = pickSpeech(SPEECHES.revived, { user: currentUser.name, name: currentPet.name });
-  currentPet.lastSpeech = { text, at: Date.now(), to: currentUser.key };
+  saveSpeechForUser(currentPet, currentUser.name, { text, at: Date.now(), to: currentUser.key });
   await Backend.savePet(currentPet);
   await Backend.addLog({
     user: currentUser.name, action: 'REVIVE',
@@ -1312,13 +1356,17 @@ function doLogout() {
 // ────────────────────────────────────────────────────────────
 async function adminReset() {
   if (!currentUser.isAdmin) return;
-  if (!confirm('전체 상태를 초기화합니다. 계속할까요?')) return;
+  if (!confirm('전체 상태와 로그를 초기화합니다. 되돌릴 수 없습니다. 계속할까요?')) return;
+
+  // 로그 전체 삭제 + pet 초기화. 리셋 수행 기록도 남기지 않음.
   await Backend.reset();
-  await Backend.addLog({
-    user: currentUser.name, action: 'RESET',
-    text: '⚙ 관리자가 전체 리셋을 수행했습니다.',
-    type: 'admin',
-  });
+
+  // 클라이언트 상태도 정리
+  logs = [];
+  prevUser = null;
+
+  // 강제 새로고침으로 모든 화면 초기화
+  setTimeout(() => location.reload(), 500);
 }
 
 async function adminRevive() {
@@ -1328,10 +1376,10 @@ async function adminRevive() {
     return;
   }
   revive(currentPet, true); // 강제
-  currentPet.lastSpeech = {
+  saveBroadcastSpeech(currentPet, {
     text: pickSpeech(SPEECHES.revived, { user: currentUser.name, name: currentPet.name }),
     at: Date.now(), to: '__admin__',
-  };
+  });
   await Backend.savePet(currentPet);
   await Backend.addLog({
     user: currentUser.name, action: 'REVIVE',
@@ -1420,6 +1468,202 @@ async function adminBackup() {
   });
 }
 
+// ────────────────────────────────────────────────────────────
+// 스냅샷 (롤백용) 수동 저장
+// ────────────────────────────────────────────────────────────
+async function adminSnapshotSave() {
+  if (!currentUser.isAdmin) return;
+  const label = prompt('스냅샷 라벨 (예: "진화 직전", "이벤트 D+3"):', '');
+  if (label === null) return;
+  const finalLabel = label.trim() || `수동 ${new Date().toLocaleString('ko-KR', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}`;
+
+  try {
+    await Backend.saveSnapshot(currentPet, finalLabel, 'manual');
+    showToast(`💾 스냅샷 저장: ${finalLabel}`, 'personality');
+    await Backend.addLog({
+      user: currentUser.name, action: 'SNAPSHOT',
+      text: `💾 스냅샷 생성: "${finalLabel}"`,
+      type: 'admin',
+    });
+  } catch (err) {
+    console.error(err);
+    appendSystemLog(`⚠ 스냅샷 저장 실패: ${err.message}`, 'warn');
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// 스냅샷 목록 + 복원 UI
+// ────────────────────────────────────────────────────────────
+async function adminSnapshotList() {
+  if (!currentUser.isAdmin) return;
+
+  const existing = document.getElementById('snapshot-modal');
+  if (existing) { existing.remove(); return; }
+
+  let snapshots;
+  try {
+    snapshots = await Backend.listSnapshots();
+  } catch (err) {
+    appendSystemLog(`⚠ 스냅샷 불러오기 실패: ${err.message}`, 'warn');
+    return;
+  }
+
+  const modal = document.createElement('div');
+  modal.id = 'snapshot-modal';
+  modal.className = 'talk-modal';
+  modal.style.maxHeight = '70vh';
+  modal.style.overflowY = 'auto';
+
+  modal.innerHTML = `
+    <div class="talk-modal-head">
+      <span>▶ 스냅샷 목록 (${snapshots.length}개)</span>
+      <span class="talk-close" id="snap-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body" style="display:block;padding:0;">
+      ${snapshots.length === 0 ? `
+        <div style="padding:20px;color:#6b8f76;text-align:center;">
+          저장된 스냅샷이 없습니다.<br>
+          [💾 SNAPSHOT] 버튼으로 현재 상태를 저장할 수 있습니다.
+        </div>
+      ` : `
+        <table style="width:100%;font-size:11px;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#0d1f14;color:#8fb39a;">
+              <th style="padding:6px;text-align:left;">시각</th>
+              <th style="padding:6px;text-align:left;">타입</th>
+              <th style="padding:6px;text-align:left;">단계</th>
+              <th style="padding:6px;text-align:left;">라벨</th>
+              <th style="padding:6px;text-align:left;">액션</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${snapshots.map(s => {
+              const t = s.atMs ? new Date(s.atMs).toLocaleString('ko-KR', {
+                month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'
+              }) : '--';
+              const stage = s.pet?.stage || '-';
+              const typeColor = s.type === 'auto' ? '#6b8f76' : '#e8a853';
+              const labelEsc = (s.label || '').replace(/"/g, '&quot;');
+              return `
+                <tr style="border-bottom:1px solid #2d5a3e;">
+                  <td style="padding:6px;color:#8fb39a;">${t}</td>
+                  <td style="padding:6px;color:${typeColor};">${s.type}</td>
+                  <td style="padding:6px;color:#03B352;">${stage}</td>
+                  <td style="padding:6px;color:#c9c9c9;">${(s.label || '').substring(0, 28)}</td>
+                  <td style="padding:6px;white-space:nowrap;">
+                    <button class="snap-restore" data-id="${s._id}" data-label="${labelEsc}"
+                      style="background:#0a1410;border:1px solid #03B352;color:#03B352;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:10px;margin-right:4px;">
+                      복원
+                    </button>
+                    <button class="snap-delete" data-id="${s._id}"
+                      style="background:#0a1410;border:1px solid #c97d5f;color:#c97d5f;padding:3px 8px;cursor:pointer;font-family:inherit;font-size:10px;">
+                      삭제
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `}
+    </div>
+  `;
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  document.getElementById('snap-close').addEventListener('click', () => modal.remove());
+
+  // 복원
+  modal.querySelectorAll('.snap-restore').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const label = btn.dataset.label;
+
+      // 3단계 선택지
+      const choice = confirm(
+        `"${label}" 시점으로 복원합니다.\n\n` +
+        `확인: 복원 이후의 모든 로그도 함께 삭제\n` +
+        `취소: 이 복원 자체를 취소\n\n` +
+        `복원하시겠습니까?`
+      );
+      if (!choice) return;
+
+      const deleteLogs = confirm(
+        `복원 이후의 로그도 함께 삭제하시겠습니까?\n\n` +
+        `확인: 복원 시점 이후 로그 모두 삭제 (깔끔)\n` +
+        `취소: 로그는 그대로 유지 (흔적 남음)`
+      );
+
+      try {
+        const result = await Backend.restoreSnapshot(id, { deleteLaterLogs: deleteLogs });
+        if (!result.ok) {
+          appendSystemLog(`⚠ 복원 실패: ${result.reason}`, 'warn');
+          return;
+        }
+        modal.remove();
+
+        await Backend.addLog({
+          user: currentUser.name, action: 'RESTORE',
+          text: `♻ 스냅샷 복원: "${label}"${deleteLogs ? ' + 이후 로그 삭제' : ''}`,
+          type: 'admin',
+        });
+
+        showToast(`♻ 복원 완료`, 'personality');
+        setTimeout(() => location.reload(), 800);
+      } catch (err) {
+        console.error(err);
+        appendSystemLog(`⚠ 복원 실패: ${err.message}`, 'warn');
+      }
+    });
+  });
+
+  // 삭제
+  modal.querySelectorAll('.snap-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('이 스냅샷을 삭제합니다. 계속할까요?')) return;
+      const id = btn.dataset.id;
+      try {
+        await Backend.deleteSnapshot(id);
+        modal.remove();
+        adminSnapshotList();  // 목록 새로고침
+      } catch (err) {
+        appendSystemLog(`⚠ 삭제 실패: ${err.message}`, 'warn');
+      }
+    });
+  });
+}
+
+// ────────────────────────────────────────────────────────────
+// 자동 스냅샷 (1시간마다)
+// ────────────────────────────────────────────────────────────
+function startAutoSnapshot() {
+  const AUTO_INTERVAL = 60 * 60 * 1000; // 1시간
+  const LAST_KEY = 'nk_last_auto_snapshot';
+
+  const attempt = async () => {
+    if (!currentPet) return;
+    const last = Number(localStorage.getItem(LAST_KEY) || 0);
+    if (Date.now() - last < AUTO_INTERVAL) return;
+
+    try {
+      const label = `자동 ${new Date().toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}`;
+      await Backend.saveSnapshot(currentPet, label, 'auto');
+      localStorage.setItem(LAST_KEY, String(Date.now()));
+      console.log('[자동 스냅샷] 저장:', label);
+    } catch (err) {
+      console.error('자동 스냅샷 실패:', err);
+    }
+  };
+
+  // 첫 시도는 30초 후
+  setTimeout(attempt, 30 * 1000);
+  // 이후 10분마다 체크
+  setInterval(attempt, 10 * 60 * 1000);
+}
+
 function adminRestore() {
   if (!currentUser.isAdmin) return;
   const input = document.createElement('input');
@@ -1504,7 +1748,7 @@ async function adminSay(text) {
     appendSystemLog('⚠ 사용법: say <대사 내용>', 'warn');
     return;
   }
-  currentPet.lastSpeech = { text, at: Date.now(), to: '__admin__' };
+  saveBroadcastSpeech(currentPet, { text, at: Date.now(), to: '__admin__' });
   await Backend.savePet(currentPet);
   await Backend.addLog({
     user: currentUser.name, action: 'SAY',
@@ -1687,6 +1931,9 @@ async function startGame() {
   // 눈 깜빡임 애니메이션 시작
   startBlinking();
 
+  // 자동 스냅샷 (1시간마다, 중복 방지는 localStorage)
+  startAutoSnapshot();
+
   // 로그인 시 맞이 대사 (EGG 단계 아니고, 관리자 아닐 때)
   setTimeout(() => {
     if (!currentPet || currentPet.isDead) return;
@@ -1705,7 +1952,7 @@ async function startGame() {
       : getTimeGreeting(currentPet, vars);
 
     if (welcome) {
-      currentPet.lastSpeech = { text: welcome, at: Date.now(), to: currentUser.key };
+      saveSpeechForUser(currentPet, currentUser.name, { text: welcome, at: Date.now(), to: currentUser.key });
       Backend.savePet(currentPet);
     }
   }, 500);
@@ -1733,7 +1980,9 @@ async function startGame() {
         || (Math.random() < 0.2 ? getTimeGreeting(currentPet, vars) : null)
         || getIdleSpeech(currentPet, vars);
       if (spk) {
-        currentPet.lastSpeech = { text: spk, at: Date.now(), to: '__sys__' };
+        saveSpeechForUser(currentPet, currentUser.name, {
+          text: spk, at: Date.now(), to: currentUser.key
+        });
         Backend.savePet(currentPet);
       }
     }
