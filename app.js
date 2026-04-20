@@ -331,6 +331,7 @@ function renderCommandButtons() {
       <button class="cmd admin" data-act="preset-low">스탯 LOW</button>
       <button class="cmd admin" data-act="forcerefresh">⚡ 전체 새로고침</button>
       <button class="cmd admin" data-act="killswitch">🔒 킬스위치</button>
+      <button class="cmd admin" data-act="trimlogs">🧹 LOG 정리</button>
       <button class="cmd admin" data-act="clearlogs">LOG 리셋</button>
       <button class="cmd" data-act="lore">LORE</button>
     `;
@@ -381,6 +382,7 @@ function renderCommandButtons() {
       else if (act === 'play') showActionSubmenu('play');
       else if (act === 'reset') adminReset();
       else if (act === 'clearlogs') adminClearLogs();
+      else if (act === 'trimlogs') adminTrimLogs();
       else if (act === 'forcerefresh') adminForceRefresh();
       else if (act === 'killswitch') adminKillSwitch();
       else if (act === 'edit') adminEdit();
@@ -2391,6 +2393,25 @@ async function adminClearLogs() {
   } catch (err) {
     console.error(err);
     appendSystemLog(`⚠ 로그 삭제 실패: ${err.message}`, 'warn');
+  }
+}
+
+// ─────────────────────────────────────────────────
+// 오래된 로그만 정리 (최근 100개만 남김)
+// ─────────────────────────────────────────────────
+async function adminTrimLogs() {
+  if (!currentUser.isAdmin) return;
+  const keep = prompt('최근 몇 개만 남길까요? (기본 100)', '100');
+  if (!keep) return;
+  const keepCount = Math.max(10, parseInt(keep, 10) || 100);
+
+  try {
+    showToast(`🧹 로그 정리 중...`, 'personality');
+    await Backend._trimOldLogs(keepCount);
+    showToast(`✓ 최근 ${keepCount}개만 남김`, 'personality');
+  } catch (err) {
+    console.error(err);
+    appendSystemLog(`⚠ 로그 정리 실패: ${err.message}`, 'warn');
   }
 }
 

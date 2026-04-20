@@ -139,7 +139,7 @@ export const Backend = {
       const log = { ...entry, at: nowMs };
       const logs = JSON.parse(localStorage.getItem('nk_logs') || '[]');
       logs.push(log);
-      const trimmed = logs.slice(-50);
+      const trimmed = logs.slice(-100);  // 로컬도 100개만
       localStorage.setItem('nk_logs', JSON.stringify(trimmed));
       listeners.logs.forEach(cb => cb(trimmed));
       return;
@@ -149,12 +149,50 @@ export const Backend = {
       await db._fns.addDoc(db._fns.collection(db, 'logs'), {
         ...entry,
         at: db._fns.serverTimestamp(),
-        atMs: nowMs,  // 서버 타임이 확정되기 전에도 정렬/표시 가능하게
+        atMs: nowMs,
       });
+
+      // 자동 트림: 가끔 전체 개수 체크하고 300개 넘으면 오래된 것부터 삭제
+      // 매번 하면 과부하이므로 5% 확률로만 실행 (평균 20회당 1번)
+      if (Math.random() < 0.05) {
+        this._trimOldLogs(300).catch(err => {
+          console.error('[log] 자동 트림 실패:', err);
+        });
+      }
     } catch (err) {
       console.error('[log] ⚠ 로그 저장 실패! 보안 규칙 확인:', err);
       console.error('[log] 규칙 필요: match /logs/{logId} { allow read, create: if true; }');
     }
+  },
+
+  // ─────────────────────────────────────────────────
+  // 자동 트림: 오래된 로그 삭제 (최신 keepCount만 남김)
+  // ─────────────────────────────────────────────────
+  async _trimOldLogs(keepCount = 300) {
+    if (CONFIG.LOCAL_TEST_MODE) return;
+
+    // 전체 로그를 최신순으로 가져옴 (atMs 기준)
+    const allSnap = await db._fns.getDocs(
+      db._fns.query(
+        db._fns.collection(db, 'logs'),
+        db._fns.orderBy('atMs', 'desc')
+      )
+    );
+
+    if (allSnap.size <= keepCount) return;  // 안 넘으면 조용히 종료
+
+    // keepCount 이후의 문서들 (오래된 것)만 삭제 대상
+    const toDelete = allSnap.docs.slice(keepCount);
+    console.log(`[log] 자동 트림: ${allSnap.size}개 중 ${toDelete.length}개 삭제 (최신 ${keepCount}개 유지)`);
+
+    // 배치 500개씩 (Firestore 제한)
+    for (let i = 0; i < toDelete.length; i += 500) {
+      const batch = toDelete.slice(i, i + 500);
+      await Promise.all(
+        batch.map(d => db._fns.deleteDoc(db._fns.doc(db, 'logs', d.id)))
+      );
+    }
+    console.log(`[log] 자동 트림 완료`);
   },
 
   onLogsChange(callback) {
@@ -168,10 +206,11 @@ export const Backend = {
       });
       return;
     }
-    // 로그 쿼리: atMs 필드 없는 옛날 로그 섞여 있을 수 있으므로
-    // limit만 걸고 모든 로그 받은 뒤 클라이언트에서 정렬
+    // 로그 쿼리: 최신순으로 가져옴 (최근 100개)
+    // atMs 필드가 없는 옛날 로그는 제외될 수 있지만, 오늘 이후 로그는 모두 atMs 있음
     const q = db._fns.query(
       db._fns.collection(db, 'logs'),
+      db._fns.orderBy('atMs', 'desc'),
       db._fns.limit(100)
     );
     return db._fns.onSnapshot(
@@ -179,7 +218,6 @@ export const Backend = {
       snap => {
         const arr = snap.docs.map(d => {
           const data = d.data();
-          // atMs 우선, 없으면 at(Timestamp)에서 ms 추출, 그것도 없으면 0
           let atMs = data.atMs || 0;
           if (!atMs && data.at?.toMillis) {
             atMs = data.at.toMillis();
@@ -189,12 +227,10 @@ export const Backend = {
           }
           return { ...data, at: atMs, _id: d.id };
         });
-        // 클라이언트 측에서 정렬 (오래된 것 → 최신)
+        // UI 표시용: 오래된 것 → 최신 순으로 정렬 (기존 render 로직 호환)
         arr.sort((a, b) => (a.at || 0) - (b.at || 0));
-        // 최근 50개만
-        const trimmed = arr.slice(-50);
-        console.log('[logs] 실시간 갱신:', trimmed.length, '개 (전체', arr.length, '개 중)');
-        callback(trimmed);
+        console.log('[logs] 실시간 갱신:', arr.length, '개');
+        callback(arr);
       },
       err => {
         console.error('[logs] ⚠ 실시간 구독 실패! 보안 규칙 확인:', err);
