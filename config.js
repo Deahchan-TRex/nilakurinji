@@ -184,5 +184,5 @@ export const CONFIG = {
   // ── 로컬 테스트 모드 ──────────────────────────────────
   // true: localStorage로 동작 (혼자 테스트용)
   // false: Firebase 실시간 동기화 (24명 공유)
-  LOCAL_TEST_MODE: true,
+  LOCAL_TEST_MODE: false,
 };
