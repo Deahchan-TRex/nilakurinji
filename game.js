@@ -14,25 +14,24 @@ export function tickStats(pet) {
   const hoursElapsed = (now - pet.lastTickAt) / 3600000;
   if (hoursElapsed <= 0) return pet;
 
-  // EGG 상태: 스탯 고정 (돌봄 불가하니 감소도 없음)
-  // lastTickAt만 업데이트해서 부화 후 갑자기 큰 감소가 오지 않도록
-  if (pet.stage === 'EGG') {
-    pet.lastTickAt = now;
-    return pet;
-  }
-
   const decay = CONFIG.DECAY_PER_HOUR;
-  pet.hunger  = Math.max(0, pet.hunger  - decay.hunger  * hoursElapsed);
-  pet.happy   = Math.max(0, pet.happy   - decay.happy   * hoursElapsed);
-  pet.energy  = Math.max(0, pet.energy  - decay.energy  * hoursElapsed);
-  pet.hygiene = Math.max(0, pet.hygiene - decay.hygiene * hoursElapsed);
+
+  // EGG 상태: 감소 속도 절반 (알도 돌봄이 필요하지만 덜 민감함)
+  const rate = pet.stage === 'EGG' ? 0.5 : 1.0;
+
+  pet.hunger  = Math.max(0, pet.hunger  - decay.hunger  * hoursElapsed * rate);
+  pet.happy   = Math.max(0, pet.happy   - decay.happy   * hoursElapsed * rate);
+  pet.energy  = Math.max(0, pet.energy  - decay.energy  * hoursElapsed * rate);
+  pet.hygiene = Math.max(0, pet.hygiene - decay.hygiene * hoursElapsed * rate);
 
   pet.lastTickAt = now;
 
-  // 사망: 3개 이상 스탯이 0
-  const zeroCount = [pet.hunger, pet.happy, pet.energy].filter(v => v <= 0).length;
-  if (zeroCount >= 3) {
-    pet.isDead = true;
+  // 사망: 3개 이상 스탯이 0 (EGG 단계는 사망 안 함 - 너무 이르니까)
+  if (pet.stage !== 'EGG') {
+    const zeroCount = [pet.hunger, pet.happy, pet.energy].filter(v => v <= 0).length;
+    if (zeroCount >= 3) {
+      pet.isDead = true;
+    }
   }
   return pet;
 }
@@ -66,7 +65,7 @@ export function updateStage(pet) {
 // ────────────────────────────────────────────────────────────
 export function applyAction(pet, action, userName = null, override = null) {
   if (pet.isDead) return { ok: false, reason: 'dead' };
-  if (pet.stage === 'EGG') return { ok: false, reason: 'egg' };
+  // EGG 상태에서도 돌봄 가능 (이벤트 설계 변경)
 
   const effect = CONFIG.ACTIONS[action];
   if (!effect) return { ok: false, reason: 'unknown' };

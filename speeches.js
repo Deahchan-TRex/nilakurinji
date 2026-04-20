@@ -34,6 +34,39 @@ export const SPEECHES = {
     '(희미한 숨소리)',
   ],
 
+  // ── EGG: 행동 시 대사 ────────────────────────────────
+  onFeed_egg: [
+    '(알 표면이 미세하게 따뜻해진다)',
+    '(안에서 꿀꺽 삼키는 듯한 소리)',
+    '(꿈틀, 응답한다)',
+    '(알이 살짝 움직인다)',
+    '(무언가를 받아들이는 기척)',
+  ],
+  onPlay_egg: [
+    '(알이 가만히 기울어진다)',
+    '(약하게, 두근)',
+    '(응답하듯 안쪽에서 움찔한다)',
+    '(알껍질에 희미한 진동)',
+  ],
+  onSleep_egg: [
+    '(알이 조용해진다)',
+    '(미약한 숨소리가 느려진다)',
+    '(고요해진다. 자는 것 같다)',
+    '(따뜻한 침묵)',
+  ],
+  onClean_egg: [
+    '(알 표면이 맑아진다)',
+    '(껍질 위 먼지가 털어진다)',
+    '(반짝이는 알껍질)',
+    '(깨끗해진 알이 빛을 받는다)',
+  ],
+  onTrain_egg: [
+    '(알이 한 번 크게 진동한다)',
+    '(무언가를 견디는 듯 꿈틀)',
+    '(안쪽에서 버티는 기척)',
+    '(힘겹게 움직이는 기색)',
+  ],
+
   // ── BABY: 단순한 옹알이 ──────────────────────────────
   onFeed_baby: [
     '맘마…',
@@ -885,23 +918,31 @@ export function getCrewFavorites(pet) {
  */
 export function getActionSpeech(action, pet, vars) {
   const stage = (pet.stage || 'BABY').toLowerCase();
-  const stageKey = stage === 'egg' ? 'baby' : stage;
+  // EGG는 EGG 전용 대사 사용 (fallback: baby)
+  const stageKey = stage;
 
-  // 20% 확률로 크루 비교 대사
-  if (vars.prevUser && vars.prevUser !== vars.user && Math.random() < 0.2) {
+  // 20% 확률로 크루 비교 대사 (EGG/BABY 제외)
+  if (stageKey !== 'egg' && stageKey !== 'baby'
+      && vars.prevUser && vars.prevUser !== vars.user && Math.random() < 0.2) {
     const pool = SPEECHES.crewCompare[stageKey];
     if (pool) return pickSpeech(pool, vars);
   }
 
   // 15% 확률로 최애 크루 회상 (CHILD 이상)
-  if (stageKey !== 'baby' && vars.fav && vars.fav !== vars.user && Math.random() < 0.15) {
+  if (stageKey !== 'egg' && stageKey !== 'baby' && vars.fav && vars.fav !== vars.user && Math.random() < 0.15) {
     const pool = SPEECHES.crewRecall_positive[stageKey];
     if (pool) return pickSpeech(pool, vars);
   }
 
   // 기본: 성격 기반 행동 대사
   const key = `on${action.charAt(0).toUpperCase() + action.slice(1)}_${stageKey}`;
-  const pool = SPEECHES[key];
+  let pool = SPEECHES[key];
+
+  // EGG에 해당 액션 대사가 없으면 baby로 fallback
+  if (!pool && stageKey === 'egg') {
+    const babyKey = `on${action.charAt(0).toUpperCase() + action.slice(1)}_baby`;
+    pool = SPEECHES[babyKey];
+  }
   if (!pool) return null;
 
   if (Array.isArray(pool)) return pickSpeech(pool, vars);

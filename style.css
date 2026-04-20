@@ -406,12 +406,9 @@ body {
   white-space: pre;
   text-align: center;
   margin-bottom: 14px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;  /* 스크롤바 숨김 */
   max-width: 100%;
   padding: 0 4px;
-  /* 모바일 스크롤 허용 */
-  -webkit-overflow-scrolling: touch;
 }
 
 .log-tbl tr.admin td { color: #e8a853; }
@@ -821,11 +818,13 @@ body {
    ▓▓▓ 모바일 반응형 (700px 이하) ▓▓▓
 ============================================================ */
 @media (max-width: 700px) {
-  /* 로그인 배너 축소 */
+  /* 로그인 배너 축소 + 중앙 정렬 */
   .login-banner {
-    font-size: 9px;
-    line-height: 1.1;
-    padding: 0 2px;
+    font-size: 10px;
+    line-height: 1.15;
+    padding: 4px 2px;
+    transform: scale(0.82);
+    transform-origin: center top;
   }
   body {
     font-size: 13px;
@@ -940,8 +939,9 @@ body {
 @media (max-width: 400px) {
   /* 로그인 배너 더 축소 */
   .login-banner {
-    font-size: 7px;
+    font-size: 8px;
     line-height: 1.15;
+    transform: scale(0.7);
   }
   body { padding: 6px; }
   .login-body { padding: 14px 12px; }

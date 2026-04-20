@@ -47,20 +47,20 @@ function renderLogin() {
 │                                             │
 │     C A L L A - L I L Y    M A N I F E S T  │
 │          CREW ACCESS TERMINAL v2.4          │
-│        2026.03 INTAKE — COHORT 087          │
+│        2026.03 INTAKE — MARS II          │
 │                                             │
 └─────────────────────────────────────────────┘</pre>
         <h1>칼라릴리호 · 관리 단말</h1>
         <div class="sub">CREW AUTHENTICATION REQUIRED</div>
 
         <div class="lore-block">
-          <div class="lore-title">▶ 꽃잎 속 이름 // SUBJECT-02847</div>
+          <div class="lore-title">▶ 꽃잎 속 이름 // AB-1</div>
           <div class="lore-body">
             이 름 &nbsp;&nbsp;&nbsp;&nbsp;: <span class="hl">크림슨 오퍼튜니티 마르스 II</span><br>
             온 곳 &nbsp;&nbsp;&nbsp;&nbsp;: <span class="hl">붉은 땅</span> / 기회를 쫓던 이들의 자리<br>
             아 버 지 &nbsp;: <span class="warn">크림슨 오퍼튜니티 마르스 I — 그 땅에 묻혔다</span><br>
             이름의 뜻 : 오래전 붉은 행성을 걸었던 탐사선을 기린다<br>
-            명 단 &nbsp;&nbsp;&nbsp;&nbsp;: <span class="hl">COHORT 087</span> 수송 대기<br>
+            명 단 &nbsp;&nbsp;&nbsp;&nbsp;: <span class="hl">MARS II</span> 수송 대기<br>
             비 고 &nbsp;&nbsp;&nbsp;&nbsp;: '사슬' 한 가닥 허용 — 고향과 겨우 이어진 실
           </div>
         </div>
@@ -81,7 +81,7 @@ function renderLogin() {
           </div>
         </div>
 
-        <div class="login-hint">// CALLA-LILY MANIFEST SYSTEM // COHORT 087 //</div>
+        <div class="login-hint">// CALLA-LILY MANIFEST SYSTEM // MARS II //</div>
       </div>
     </div>
   `;
@@ -130,7 +130,7 @@ function renderMain() {
           <!-- LEFT: 캐릭터 -->
           <div class="tbl">
             <div class="tbl-head">
-              <span>SUBJECT-02847</span>
+              <span>AB-1</span>
               <span class="badge" id="stage-badge">EGG</span>
             </div>
             <div class="tbl-body">
@@ -275,14 +275,12 @@ function renderCommandButtons() {
       <button class="cmd" data-act="help" style="grid-column: span 2;">[?] HELP</button>
     `;
   } else {
-    // 관리자일 경우: 두 줄 — 관리 명령 + 시뮬레이션 점프
+    // 관리자일 경우: 상단 줄 (핵심 명령)
     adminCmds.innerHTML = `
-      <button class="cmd admin" data-act="reset">[R] RESET</button>
+      <button class="cmd admin" data-act="reset">[R] RESET 전체</button>
       <button class="cmd admin" data-act="edit">[E] EDIT</button>
-      <button class="cmd admin" data-act="adminrevive">[V] REVIVE</button>
-      <button class="cmd admin" data-act="snapshotsave">💾 SNAP</button>
-      <button class="cmd admin" data-act="snapshotlist">♻ RESTORE</button>
-      <button class="cmd" data-act="logout">[X] LOGOUT</button>
+      <button class="cmd admin" data-act="status">STATUS</button>
+      <button class="cmd admin" data-act="help">HELP</button>
     `;
 
     // 관리자 시뮬레이션 바 추가 (단계 점프)
@@ -320,6 +318,42 @@ function renderCommandButtons() {
       <button class="cmd admin" data-act="backup">JSON 백업</button>
       <button class="cmd" data-act="lore">LORE</button>
     `;
+
+    // 시간 조작 바 (hour 단위 성장)
+    let timeBar = document.getElementById('cmds-time');
+    if (!timeBar) {
+      timeBar = document.createElement('div');
+      timeBar.id = 'cmds-time';
+      timeBar.className = 'cmds';
+      timeBar.style.marginTop = '4px';
+      presetBar.parentNode.insertBefore(timeBar, presetBar.nextSibling);
+    }
+    timeBar.innerHTML = `
+      <button class="cmd admin" data-act="age-1">+1h</button>
+      <button class="cmd admin" data-act="age-3">+3h</button>
+      <button class="cmd admin" data-act="age-6">+6h</button>
+      <button class="cmd admin" data-act="age-12">+12h</button>
+      <button class="cmd admin" data-act="age-24">+24h</button>
+      <button class="cmd admin" data-act="age-custom">⏱ 커스텀</button>
+    `;
+
+    // 스탯 개별 조작 바
+    let statBar = document.getElementById('cmds-stat');
+    if (!statBar) {
+      statBar = document.createElement('div');
+      statBar.id = 'cmds-stat';
+      statBar.className = 'cmds';
+      statBar.style.marginTop = '4px';
+      timeBar.parentNode.insertBefore(statBar, timeBar.nextSibling);
+    }
+    statBar.innerHTML = `
+      <button class="cmd admin" data-act="edit-stat">스탯 편집</button>
+      <button class="cmd admin" data-act="edit-persona">성격 편집</button>
+      <button class="cmd admin" data-act="snapshotsave">💾 SNAP</button>
+      <button class="cmd admin" data-act="snapshotlist">♻ RESTORE</button>
+      <button class="cmd admin" data-act="adminrevive">REVIVE</button>
+      <button class="cmd" data-act="logout">LOGOUT</button>
+    `;
   }
 
   document.querySelectorAll('.cmd').forEach(btn => {
@@ -332,6 +366,8 @@ function renderCommandButtons() {
       else if (act === 'reset') adminReset();
       else if (act === 'clearlogs') adminClearLogs();
       else if (act === 'edit') adminEdit();
+      else if (act === 'edit-stat') adminEditStat();
+      else if (act === 'edit-persona') adminEditPersona();
       else if (act === 'adminrevive') adminRevive();
       else if (act === 'backup') adminBackup();
       else if (act === 'snapshotsave') adminSnapshotSave();
@@ -341,6 +377,11 @@ function renderCommandButtons() {
       else if (act === 'status') adminStatus();
       else if (act.startsWith('sim-')) adminSimJump(act.slice(4));
       else if (act.startsWith('preset-')) adminPreset(act.slice(7));
+      else if (act.startsWith('age-')) {
+        const key = act.slice(4);
+        if (key === 'custom') adminAgeCustom();
+        else adminAge(Number(key));
+      }
       else handleAction(act);
     });
   });
@@ -403,10 +444,7 @@ function handleCommand(raw) {
 // ────────────────────────────────────────────────────────────
 function showActionSubmenu(action) {
   if (!currentPet || currentPet.isDead) return;
-  if (currentPet.stage === 'EGG') {
-    appendSystemLog(`⚠ EGG 상태에서는 ${action.toUpperCase()}할 수 없습니다.`, 'warn');
-    return;
-  }
+  // EGG 상태에서도 허용 (돌봄 가능)
 
   // 이미 열려있으면 토글
   const existing = document.getElementById('submenu-modal');
@@ -630,7 +668,7 @@ function render() {
     speechWrapper.innerHTML = `
       <div class="speech">
         <div class="speech-head">
-          <span>▶ ARCHIVE LOG // COHORT 087</span>
+          <span>▶ ARCHIVE LOG // MARS II</span>
           <span>T-${Math.floor(remaining)}h</span>
         </div>
         <div class="speech-body" style="font-style:normal;color:#8fb39a;">
@@ -734,7 +772,7 @@ function render() {
 
   // 미션 진행률
   document.getElementById('mission').innerHTML = `
-    <div class="mission-info">COHORT 087 · CYCLE</div>
+    <div class="mission-info">MARS II · CYCLE</div>
     <div class="progress"><div class="progress-fill" style="width:${progress.percent.toFixed(1)}%"></div></div>
     <div class="progress-label">
       <span class="hl">${progress.percent.toFixed(1)}%</span>
@@ -1874,11 +1912,224 @@ async function adminAge(hoursStr) {
   currentPet.lastTickAt = Date.now(); // 스탯 즉시 감소 막기 위해 리셋
   // 해설 중복 방지키 초기화 (새 시점에 맞게 다시 노출)
   delete currentPet.narrativeShownKey;
+  // 진화 단계도 새 시간에 맞춰 자동 업데이트
+  const hoursLived = (Date.now() - currentPet.bornAt) / 3600000;
+  for (const s of CONFIG.STAGES) {
+    if (hoursLived >= s.fromHour && hoursLived < s.toHour) {
+      const from = currentPet.stage;
+      if (from !== s.name) {
+        currentPet.stage = s.name;
+        await Backend.addLog({
+          user: currentUser.name, action: 'EVOLVE',
+          text: `✦ ${from} → ${s.name} (시간 조정)`,
+          type: 'epic',
+        });
+      }
+      break;
+    }
+  }
   await Backend.savePet(currentPet);
+  showToast(`⏱ 나이 ${hours > 0 ? '+' : ''}${hours}h → ${currentPet.stage}`, 'personality');
   await Backend.addLog({
     user: currentUser.name, action: 'AGE',
     text: `⚙ 나이 ${hours > 0 ? '+' : ''}${hours}h 조정`,
     type: 'admin',
+  });
+}
+
+// 커스텀 시간 입력
+async function adminAgeCustom() {
+  if (!currentUser.isAdmin) return;
+  const input = prompt(
+    '몇 시간 진행할까요?\n' +
+    '(양수: 성장 진행 / 음수: 되돌림 / 예: 72 또는 -24)\n\n' +
+    '현재 단계 참고:\n' +
+    'EGG 0~36h, BABY 36~84h, CHILD 84~156h, TEEN 156~264h, ADULT 264~336h',
+    '24'
+  );
+  if (input === null) return;
+  const hours = Number(input);
+  if (isNaN(hours)) {
+    appendSystemLog('⚠ 숫자로 입력해주세요', 'warn');
+    return;
+  }
+  await adminAge(hours);
+}
+
+// 스탯 개별 편집 (모달)
+async function adminEditStat() {
+  if (!currentUser.isAdmin) return;
+  const existing = document.getElementById('edit-stat-modal');
+  if (existing) { existing.remove(); return; }
+
+  const stats = [
+    { key: 'hunger', label: '배고픔' },
+    { key: 'happy', label: '행복' },
+    { key: 'energy', label: '에너지' },
+    { key: 'hygiene', label: '청결' },
+    { key: 'strength', label: '체력' },
+    { key: 'intel', label: '지능' },
+    { key: 'bond', label: '유대' },
+    { key: 'level', label: '레벨' },
+    { key: 'exp', label: '경험치' },
+  ];
+
+  const modal = document.createElement('div');
+  modal.id = 'edit-stat-modal';
+  modal.className = 'talk-modal';
+  modal.innerHTML = `
+    <div class="talk-modal-head">
+      <span>⚙ 스탯 편집</span>
+      <span class="talk-close" id="edit-stat-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body" style="display:block;padding:12px;">
+      <div style="color:#8fb39a;font-size:11px;margin-bottom:10px;">
+        각 스탯 값을 직접 입력해서 저장할 수 있습니다 (0-100).
+      </div>
+      <table style="width:100%;font-size:12px;">
+        ${stats.map(s => `
+          <tr>
+            <td style="padding:4px 6px;color:#8fb39a;width:80px;">${s.label}</td>
+            <td style="padding:4px 6px;color:#6b8f76;width:50px;">(${s.key})</td>
+            <td style="padding:4px 6px;color:#03B352;width:40px;text-align:right;">
+              ${Math.floor(currentPet[s.key] || 0)}
+            </td>
+            <td style="padding:4px 6px;">
+              <input type="number" min="0" max="100" data-stat="${s.key}"
+                value="${Math.floor(currentPet[s.key] || 0)}"
+                style="width:60px;background:#000;border:1px solid #2d5a3e;color:#03B352;
+                font-family:inherit;font-size:11px;padding:3px 5px;" />
+            </td>
+          </tr>
+        `).join('')}
+      </table>
+      <div style="margin-top:12px;text-align:right;">
+        <button id="edit-stat-submit"
+          style="background:#0a1410;border:1px solid #03B352;color:#03B352;
+          padding:6px 18px;cursor:pointer;font-family:inherit;font-size:12px;">
+          저장
+        </button>
+      </div>
+    </div>
+  `;
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  document.getElementById('edit-stat-close').addEventListener('click', () => modal.remove());
+  document.getElementById('edit-stat-submit').addEventListener('click', async () => {
+    const inputs = modal.querySelectorAll('input[data-stat]');
+    let changed = 0;
+    for (const inp of inputs) {
+      const key = inp.dataset.stat;
+      const val = Number(inp.value);
+      if (isNaN(val)) continue;
+      const clamped = Math.max(0, Math.min(100, val));
+      if (currentPet[key] !== clamped) {
+        currentPet[key] = clamped;
+        changed++;
+      }
+    }
+    if (changed > 0) {
+      await Backend.savePet(currentPet);
+      await Backend.addLog({
+        user: currentUser.name, action: 'EDIT',
+        text: `⚙ 스탯 편집 (${changed}개 변경)`,
+        type: 'admin',
+      });
+      showToast(`⚙ ${changed}개 스탯 수정됨`, 'personality');
+    }
+    modal.remove();
+  });
+}
+
+// 성격 편집 (슬라이더)
+async function adminEditPersona() {
+  if (!currentUser.isAdmin) return;
+  const existing = document.getElementById('edit-persona-modal');
+  if (existing) { existing.remove(); return; }
+
+  const axes = [
+    { key: 'activeVsCalm',      left: '차분', right: '활발' },
+    { key: 'greedVsTemperance', left: '절제', right: '탐욕' },
+    { key: 'socialVsIntro',     left: '내향', right: '사교' },
+    { key: 'diligentVsFree',    left: '자유', right: '성실' },
+  ];
+
+  const p = currentPet.personality || {};
+
+  const modal = document.createElement('div');
+  modal.id = 'edit-persona-modal';
+  modal.className = 'talk-modal';
+  modal.innerHTML = `
+    <div class="talk-modal-head">
+      <span>⚙ 성격 편집</span>
+      <span class="talk-close" id="edit-persona-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body" style="display:block;padding:12px;">
+      <div style="color:#8fb39a;font-size:11px;margin-bottom:10px;">
+        -100 (왼쪽) ~ +100 (오른쪽). 0은 중립.
+      </div>
+      ${axes.map(a => {
+        const val = p[a.key] || 0;
+        return `
+          <div style="margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:#8fb39a;margin-bottom:4px;">
+              <span>◁ ${a.left}</span>
+              <span style="color:#03B352;" id="persona-val-${a.key}">${val}</span>
+              <span>${a.right} ▷</span>
+            </div>
+            <input type="range" min="-100" max="100" value="${val}" data-axis="${a.key}"
+              style="width:100%;" />
+          </div>
+        `;
+      }).join('')}
+      <div style="margin-top:12px;text-align:right;">
+        <button id="edit-persona-submit"
+          style="background:#0a1410;border:1px solid #03B352;color:#03B352;
+          padding:6px 18px;cursor:pointer;font-family:inherit;font-size:12px;">
+          저장
+        </button>
+      </div>
+    </div>
+  `;
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  // 슬라이더 값 실시간 표시
+  modal.querySelectorAll('input[data-axis]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const v = document.getElementById(`persona-val-${inp.dataset.axis}`);
+      if (v) v.textContent = inp.value;
+    });
+  });
+
+  document.getElementById('edit-persona-close').addEventListener('click', () => modal.remove());
+  document.getElementById('edit-persona-submit').addEventListener('click', async () => {
+    currentPet.personality = currentPet.personality || {};
+    let changed = 0;
+    modal.querySelectorAll('input[data-axis]').forEach(inp => {
+      const val = Number(inp.value);
+      if (currentPet.personality[inp.dataset.axis] !== val) {
+        currentPet.personality[inp.dataset.axis] = val;
+        changed++;
+      }
+    });
+    if (changed > 0) {
+      await Backend.savePet(currentPet);
+      await Backend.addLog({
+        user: currentUser.name, action: 'EDIT',
+        text: `⚙ 성격 편집 (${changed}축 변경)`,
+        type: 'admin',
+      });
+      showToast(`⚙ 성격 ${changed}축 수정됨`, 'personality');
+    }
+    modal.remove();
   });
 }
 
