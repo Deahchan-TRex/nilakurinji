@@ -171,25 +171,33 @@ export const Backend = {
       });
       return;
     }
+    // 로그 쿼리: atMs 필드 없는 옛날 로그 섞여 있을 수 있으므로
+    // limit만 걸고 모든 로그 받은 뒤 클라이언트에서 정렬
     const q = db._fns.query(
       db._fns.collection(db, 'logs'),
-      db._fns.orderBy('atMs', 'asc'),
-      db._fns.limit(50)
+      db._fns.limit(100)
     );
     return db._fns.onSnapshot(
       q,
       snap => {
         const arr = snap.docs.map(d => {
           const data = d.data();
-          // at을 ms 숫자로 정규화 (serverTimestamp가 아직 pending이면 atMs 사용)
+          // atMs 우선, 없으면 at(Timestamp)에서 ms 추출, 그것도 없으면 0
           let atMs = data.atMs || 0;
-          if (data.at?.toMillis) {
+          if (!atMs && data.at?.toMillis) {
             atMs = data.at.toMillis();
+          }
+          if (!atMs && typeof data.at === 'number') {
+            atMs = data.at;
           }
           return { ...data, at: atMs, _id: d.id };
         });
-        console.log('[logs] 실시간 갱신:', arr.length, '개');
-        callback(arr);
+        // 클라이언트 측에서 정렬 (오래된 것 → 최신)
+        arr.sort((a, b) => (a.at || 0) - (b.at || 0));
+        // 최근 50개만
+        const trimmed = arr.slice(-50);
+        console.log('[logs] 실시간 갱신:', trimmed.length, '개 (전체', arr.length, '개 중)');
+        callback(trimmed);
       },
       err => {
         console.error('[logs] ⚠ 실시간 구독 실패! 보안 규칙 확인:', err);
@@ -203,13 +211,9 @@ export const Backend = {
       localStorage.removeItem('nk_logs');
       listeners.logs.forEach(cb => cb([]));
     } else {
-      // Firebase: logs 컬렉션 전체 삭제
+      // Firebase: logs 컬렉션 전체 삭제 (배치 500개씩)
       try {
-        const logsSnap = await db._fns.getDocs(db._fns.collection(db, 'logs'));
-        const deletePromises = logsSnap.docs.map(d =>
-          db._fns.deleteDoc(db._fns.doc(db, 'logs', d.id))
-        );
-        await Promise.all(deletePromises);
+        await this.clearLogs();
       } catch (err) {
         console.error('로그 삭제 실패:', err);
       }
@@ -226,11 +230,22 @@ export const Backend = {
       listeners.logs.forEach(cb => cb([]));
       return;
     }
-    const logsSnap = await db._fns.getDocs(db._fns.collection(db, 'logs'));
-    const deletePromises = logsSnap.docs.map(d =>
-      db._fns.deleteDoc(db._fns.doc(db, 'logs', d.id))
-    );
-    await Promise.all(deletePromises);
+    // Firestore 배치는 500개씩 제한
+    let totalDeleted = 0;
+    while (true) {
+      const logsSnap = await db._fns.getDocs(
+        db._fns.query(db._fns.collection(db, 'logs'), db._fns.limit(500))
+      );
+      if (logsSnap.empty) break;
+      const deletePromises = logsSnap.docs.map(d =>
+        db._fns.deleteDoc(db._fns.doc(db, 'logs', d.id))
+      );
+      await Promise.all(deletePromises);
+      totalDeleted += logsSnap.docs.length;
+      console.log(`[clearLogs] 삭제 진행: ${totalDeleted}개`);
+      if (logsSnap.docs.length < 500) break;
+    }
+    console.log(`[clearLogs] 완료: 총 ${totalDeleted}개 삭제`);
   },
 
   // ────────────────────────────────────────────────────
