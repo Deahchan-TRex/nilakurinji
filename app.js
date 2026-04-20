@@ -661,24 +661,44 @@ function render() {
     const rBtn = document.getElementById('revive-btn');
     if (rBtn) rBtn.addEventListener('click', doRevive);
   } else if (currentPet.stage === 'EGG') {
-    // EGG: 해설을 말풍선 자리에 표시
+    // EGG: 본인에게 한 대사가 있으면 그걸 보여주고, 없으면 아카이브 해설
+    const personalSpeech = getVisibleSpeech(currentPet, currentUser.name);
     const narrative = getEggNarrative(currentPet);
     const hoursLived = Math.max(0, (Date.now() - currentPet.bornAt) / 3600000);
     const remaining = Math.max(0, 36 - hoursLived);
-    speechWrapper.innerHTML = `
-      <div class="speech">
-        <div class="speech-head">
-          <span>▶ ARCHIVE LOG // MARS II</span>
-          <span>T-${Math.floor(remaining)}h</span>
+
+    // 최근 1분 이내에 개인 대사가 있었으면 그걸 우선 표시 (행동 직후)
+    const recentSpeech = personalSpeech && (Date.now() - (personalSpeech.at || 0) < 60000);
+
+    if (recentSpeech) {
+      speechWrapper.innerHTML = `
+        <div class="speech">
+          <div class="speech-head">
+            <span>▶ ${currentPet.name} · ${timeAgo(personalSpeech.at)}</span>
+            <span>EGG</span>
+          </div>
+          <div class="speech-body">${personalSpeech.text}</div>
         </div>
-        <div class="speech-body" style="font-style:normal;color:#8fb39a;">
-          ${narrative ? narrative.text.replace('◎ ', '') : '승선 대기 중…'}
+        <div style="padding:8px 12px;background:#050a07;border:1px dotted #2d5a3e;margin-bottom:8px;font-size:11px;color:#6b8f76;text-align:center;letter-spacing:1px;">
+          // 칼라릴리호 항해 중 — 부화까지 ${Math.floor(remaining)}h //
         </div>
-      </div>
-      <div style="padding:8px 12px;background:#050a07;border:1px dotted #2d5a3e;margin-bottom:8px;font-size:11px;color:#6b8f76;text-align:center;letter-spacing:1px;">
-        // 칼라릴리호 항해 중 — 부화까지 기다려주세요 //
-      </div>
-    `;
+      `;
+    } else {
+      speechWrapper.innerHTML = `
+        <div class="speech">
+          <div class="speech-head">
+            <span>▶ ARCHIVE LOG // MARS II</span>
+            <span>T-${Math.floor(remaining)}h</span>
+          </div>
+          <div class="speech-body" style="font-style:normal;color:#8fb39a;">
+            ${narrative ? narrative.text.replace('◎ ', '') : '승선 대기 중…'}
+          </div>
+        </div>
+        <div style="padding:8px 12px;background:#050a07;border:1px dotted #2d5a3e;margin-bottom:8px;font-size:11px;color:#6b8f76;text-align:center;letter-spacing:1px;">
+          // 칼라릴리호 항해 중 — 부화까지 ${Math.floor(remaining)}h //
+        </div>
+      `;
+    }
   } else {
     // 개인 대사가 있으면 그것을, 없으면 공용 대사 (최신 기준)
     const lastSpeech = getVisibleSpeech(currentPet, currentUser.name);
@@ -780,11 +800,10 @@ function render() {
     </div>
   `;
 
-  // 버튼 비활성화
+  // 버튼 비활성화 — 사망 시에만 막음 (EGG는 돌봄 가능)
   const dead = currentPet.isDead;
-  const isEgg = currentPet.stage === 'EGG';
   document.querySelectorAll('.cmd.primary').forEach(b => {
-    b.disabled = dead || isEgg;
+    b.disabled = dead;
   });
 
   // 모든 단계: 시간대별 아카이브 해설 자동 노출
@@ -1077,8 +1096,37 @@ async function handleGreeting(greetKey, rawInput) {
     appendSystemLog('💭 답을 들을 수 없는 상태입니다.', 'warn');
     return;
   }
+
+  // EGG 상태: 관찰형 반응
   if (currentPet.stage === 'EGG') {
-    appendSystemLog('💭 아직 대답할 수 없어요. 부화를 기다려주세요.', 'system');
+    const eggReactions = {
+      hello:     ['(알이 살짝 기울어졌다. 인사 같다.)', '(꿈틀, 반응한다.)', '(따뜻해진다.)'],
+      bye:       ['(알이 조용해진다. 아쉬워하는 것 같다.)', '(미세한 진동.)'],
+      goodnight: ['(알 속에서 숨소리가 느려진다.)', '(잠이 든 것 같다.)'],
+      thanks:    ['(알이 따스하게 빛난다.)', '(두근, 반응한다.)'],
+      sorry:     ['(알이 가만히 있다.)', '(괜찮다는 듯 미동.)'],
+      love:      ['(알이 밝게 빛난다.)', '(포근해진다.)'],
+      howareyou: ['(알이 천천히 기울어진다.)', '(두근두근)'],
+    };
+    const pool = eggReactions[greetKey] || ['(알이 미세하게 움직인다.)'];
+    const reaction = pool[Math.floor(Math.random() * pool.length)];
+
+    saveSpeechForUser(currentPet, currentUser.name, {
+      text: reaction, at: Date.now(), to: currentUser.key
+    });
+    currentPet.bond = Math.min(100, (currentPet.bond || 0) + 0.05);
+    showEmote({
+      hello: 'note', bye: 'heart2', goodnight: 'sleep',
+      thanks: 'heart', love: 'heart', sorry: 'bubble', howareyou: 'sparkle',
+    }[greetKey] || 'bubble');
+
+    await Backend.savePet(currentPet);
+    await Backend.addLog({
+      user: currentUser.name, action: 'CHAT',
+      text: `💭 "${rawInput}" → 알이 반응했다`,
+      type: 'action',
+      viewer: currentUser.name,
+    });
     return;
   }
 
