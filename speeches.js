@@ -1296,3 +1296,82 @@ export function getQuoteRecall(pet, vars) {
   if (!pool) return null;
   return pickSpeech(pool, vars);
 }
+
+// ────────────────────────────────────────────────────────────
+// 짧은 캐릭터 말풍선 (ASCII 옆에 잠깐 뜸)
+// ────────────────────────────────────────────────────────────
+const BUBBLE_SPEECHES = {
+  EGG: [
+    '…', '…?', '. . .', '*꿈틀*', '*두근*', '*움찔*',
+  ],
+  BABY: [
+    '헤헤', '꺄르르', '음~', '냠냠', '꿀꺽', '좋아!',
+    '뽀송해', '포근해', '까꿍', '엄마?', '밝다!', '따뜻해',
+    '응?', '우와', '쿨쿨', '냐아', 'ㅇㅇ', '웅',
+  ],
+  CHILD: [
+    '오잉?', '어?', '음...', '궁금해', '뭐야?', '와!',
+    '재밌어', '지루해', '배고파', '졸려', '심심해',
+    '보고 싶어', '또 봐', '어디 가?', '괜찮아?',
+    '여긴 어디?', '꽃이다', '별이네', '바람 안 불어',
+  ],
+  TEEN: [
+    '…', '하...', '흐음', '글쎄', '그래?', '응...',
+    '몰라', '아마도', '...진짜?', '이상해', '조용해',
+    '생각 중', '창밖엔…', '달 봤어?', '피곤해',
+    '돌아갈래', '믿을 수 있어?', '조심해',
+  ],
+  ADULT: [
+    '…', '…', '.....', '조용히', '그래…', '살아있어',
+    '기억해', '돌아가자', '꽃잎이…', '그만 됐어',
+    '지켜볼게', '그 말…', '너는 알까', '끝인가',
+    '눈을 감는다', '여기 있어', '잊지 않을게',
+  ],
+};
+
+export function pickBubbleSpeech(pet) {
+  const pool = BUBBLE_SPEECHES[pet.stage] || BUBBLE_SPEECHES.BABY;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// ────────────────────────────────────────────────────────────
+// EGG 메시지 회상 — 알 상태에서 크루가 남긴 말을 부화 후 떠올림
+// ────────────────────────────────────────────────────────────
+export function getEggMessageRecall(pet, vars) {
+  const msgs = pet.eggMessages || [];
+  if (msgs.length === 0) return null;
+
+  const msg = msgs[Math.floor(Math.random() * msgs.length)];
+  const stage = (pet.stage || 'BABY').toLowerCase();
+
+  // 단계별 회상 방식 (알 속에서 들었던 말을 기억함)
+  const templates = {
+    baby: [
+      `알 속에서 들렸던 목소리… "${msg.text}". ${msg.user}{이/가} 그랬던 것 같아.`,
+      `${msg.user}? 어디선가 들은 이름. "${msg.text}"라고 했었지?`,
+      `움찔, 하고 뭔가 떠올라. ${msg.user}의 목소리가 남아있어.`,
+    ],
+    child: [
+      `"${msg.text}" — ${msg.user}{이/가} 알 속에 있던 나에게 했던 말이야. 기억해.`,
+      `${msg.user}, 네가 그때 한 말 기억하고 있어. "${msg.text}"`,
+      `알 속에서 들었던 ${msg.user}의 목소리, 아직도 또렷해.`,
+      `누군가 ${msg.user}라는 사람이 나한테 말을 걸었지. "${msg.text}"라고.`,
+    ],
+    teen: [
+      `${msg.user}{이/가} 알 속에 있던 나에게 속삭였던 말. "${msg.text}". 잊지 않았어.`,
+      `"${msg.text}" — 내가 아직 빛을 보기도 전에 ${msg.user}{이/가} 해준 말.`,
+      `알 속의 어둠에 ${msg.user}의 목소리가 섞여 들었어. "${msg.text}"`,
+      `세상에 나오기 전부터 나를 부른 사람이 있었어. ${msg.user}.`,
+    ],
+    adult: [
+      `알 속에 있던 나는 이미 ${msg.user}의 목소리를 들었다. "${msg.text}".`,
+      `${msg.user}. 네가 가장 먼저 내게 말을 걸어준 사람이었지. "${msg.text}"`,
+      `"${msg.text}" — 내 첫 기억은 네 목소리야, ${msg.user}.`,
+      `아직 눈도 뜨지 않았을 때, ${msg.user}{이/가} 나에게 한 약속 같은 말. 기억하고 있어.`,
+    ],
+  };
+
+  const pool = templates[stage];
+  if (!pool) return null;
+  return pickSpeech(pool, { ...vars, user: msg.user });
+}

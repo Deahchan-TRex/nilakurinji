@@ -397,6 +397,23 @@ body {
 .log-tbl tr.warn td { color: #c97d5f; }
 .log-tbl tr.epic td { color: #03B352; font-weight: 500; }
 .log-tbl tr.system td { color: #5fa5c9; }
+/* 로그인 배너 ASCII */
+.login-banner {
+  color: #1a3d28;
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  line-height: 1.05;
+  white-space: pre;
+  text-align: center;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  padding: 0 4px;
+  /* 모바일 스크롤 허용 */
+  -webkit-overflow-scrolling: touch;
+}
+
 .log-tbl tr.admin td { color: #e8a853; }
 
 /* 신규 로그 페이드인 + 슬라이드 */
@@ -443,6 +460,61 @@ body {
   15%  { opacity: 1; transform: translateY(0) scale(1.2); }
   30%  { transform: translateY(-4px) scale(1); }
   100% { opacity: 0; transform: translateY(-40px) scale(0.9); }
+}
+
+/* ──────────────────────────────────────
+   캐릭터 옆 작은 말풍선 (간헐적 짧은 대사)
+   ────────────────────────────────────── */
+.chat-bubble {
+  position: absolute;
+  top: 20px;
+  right: -12px;
+  background: #0a1410;
+  border: 1px solid #03B352;
+  color: #03B352;
+  font-family: 'VT323', monospace;
+  font-size: 11px;
+  padding: 4px 8px;
+  max-width: 160px;
+  z-index: 6;
+  animation: bubbleFloat 4s ease-out forwards;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 0 6px rgba(3, 179, 82, 0.4);
+  pointer-events: none;
+}
+/* 말풍선 꼬리 */
+.chat-bubble::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-right: 5px solid #03B352;
+}
+.chat-bubble::after {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  border-right: 4px solid #0a1410;
+}
+
+@keyframes bubbleFloat {
+  0%   { opacity: 0; transform: translateX(-10px) scale(0.8); }
+  12%  { opacity: 1; transform: translateX(0) scale(1); }
+  85%  { opacity: 1; transform: translateX(0) scale(1); }
+  100% { opacity: 0; transform: translateX(5px) scale(0.95); }
 }
 
 /* ──────────────────────────────────────
@@ -749,6 +821,12 @@ body {
    ▓▓▓ 모바일 반응형 (700px 이하) ▓▓▓
 ============================================================ */
 @media (max-width: 700px) {
+  /* 로그인 배너 축소 */
+  .login-banner {
+    font-size: 9px;
+    line-height: 1.1;
+    padding: 0 2px;
+  }
   body {
     font-size: 13px;
     padding: 10px;
@@ -860,6 +938,11 @@ body {
 
 /* ── 초소형 (400px 이하) ── */
 @media (max-width: 400px) {
+  /* 로그인 배너 더 축소 */
+  .login-banner {
+    font-size: 7px;
+    line-height: 1.15;
+  }
   body { padding: 6px; }
   .login-body { padding: 14px 12px; }
   .login .logo { font-size: 8px; }

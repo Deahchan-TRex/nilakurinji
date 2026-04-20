@@ -54,6 +54,8 @@ export function defaultPet() {
     recentCrew: [],
     // 인상적인 대사 기록 (최근 5개) — 나중에 회상용
     memorableQuotes: [],
+    // EGG 상태에서 크루가 남긴 메시지 { user, text, at }[] — 부화 후 회상용
+    eggMessages: [],
 
     // 공용 마지막 대사 (누가 봐도 보이는 것 - 진화 순간 등)
     lastSpeech: null,
@@ -175,6 +177,22 @@ export const Backend = {
   },
 
   // ────────────────────────────────────────────────────
+  // 로그만 삭제 (pet 상태는 유지)
+  // ────────────────────────────────────────────────────
+  async clearLogs() {
+    if (CONFIG.LOCAL_TEST_MODE) {
+      localStorage.removeItem('nk_logs');
+      listeners.logs.forEach(cb => cb([]));
+      return;
+    }
+    const logsSnap = await db._fns.getDocs(db._fns.collection(db, 'logs'));
+    const deletePromises = logsSnap.docs.map(d =>
+      db._fns.deleteDoc(db._fns.doc(db, 'logs', d.id))
+    );
+    await Promise.all(deletePromises);
+  },
+
+  // ────────────────────────────────────────────────────
   // Presence (동접자) — 2분마다 heartbeat, 5분 이상이면 오프라인 판정
   // ────────────────────────────────────────────────────
   async updatePresence(userName) {
@@ -220,6 +238,20 @@ export const Backend = {
         callback(map);
       }
     );
+  },
+
+  async removePresence(userName) {
+    if (CONFIG.LOCAL_TEST_MODE) {
+      const presence = JSON.parse(localStorage.getItem('nk_presence') || '{}');
+      delete presence[userName];
+      localStorage.setItem('nk_presence', JSON.stringify(presence));
+      return;
+    }
+    try {
+      await db._fns.deleteDoc(db._fns.doc(db, 'presence', userName));
+    } catch (err) {
+      console.error('presence 삭제 실패:', err);
+    }
   },
 
   // ────────────────────────────────────────────────────

@@ -14,6 +14,13 @@ export function tickStats(pet) {
   const hoursElapsed = (now - pet.lastTickAt) / 3600000;
   if (hoursElapsed <= 0) return pet;
 
+  // EGG 상태: 스탯 고정 (돌봄 불가하니 감소도 없음)
+  // lastTickAt만 업데이트해서 부화 후 갑자기 큰 감소가 오지 않도록
+  if (pet.stage === 'EGG') {
+    pet.lastTickAt = now;
+    return pet;
+  }
+
   const decay = CONFIG.DECAY_PER_HOUR;
   pet.hunger  = Math.max(0, pet.hunger  - decay.hunger  * hoursElapsed);
   pet.happy   = Math.max(0, pet.happy   - decay.happy   * hoursElapsed);

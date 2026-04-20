@@ -16,9 +16,10 @@ import {
   pickSpeech, SPEECHES, getCrewFavorites,
   getTimeGreeting, getWelcomeSpeech, getTalkTopics, getTalkResponse,
   pickTalkTurnCount, getTalkFarewell,
-  recordMemorableQuote, getQuoteRecall,
+  recordMemorableQuote, getQuoteRecall, getEggMessageRecall,
   getNextTopicChoices, getTopicBridge,
   matchGreeting, getGreetingResponse,
+  pickBubbleSpeech,
 } from './speeches.js';
 
 // ────────────────────────────────────────────────────────────
@@ -42,9 +43,9 @@ function renderLogin() {
         <span><span class="blink">■</span> SECURE CONNECTION</span>
       </div>
       <div class="login-body">
-        <pre style="color:#1a3d28;font-family:'VT323',monospace;font-size:13px;line-height:1.05;white-space:pre;text-align:center;margin-bottom:14px;">┌─────────────────────────────────────────────┐
+        <pre class="login-banner">┌─────────────────────────────────────────────┐
 │                                             │
-│   N I L A K U R I N J I   M A N I F E S T   │
+│     C A L L A - L I L Y    M A N I F E S T  │
 │          CREW ACCESS TERMINAL v2.4          │
 │        2026.03 INTAKE — COHORT 087          │
 │                                             │
@@ -315,7 +316,7 @@ function renderCommandButtons() {
       <button class="cmd admin" data-act="preset-full">스탯 MAX</button>
       <button class="cmd admin" data-act="preset-low">스탯 LOW</button>
       <button class="cmd admin" data-act="preset-active">활발/사교</button>
-      <button class="cmd admin" data-act="preset-intro">내향/차분</button>
+      <button class="cmd admin" data-act="clearlogs">LOG 리셋</button>
       <button class="cmd admin" data-act="backup">JSON 백업</button>
       <button class="cmd" data-act="lore">LORE</button>
     `;
@@ -329,6 +330,7 @@ function renderCommandButtons() {
       else if (act === 'feed') showActionSubmenu('feed');
       else if (act === 'play') showActionSubmenu('play');
       else if (act === 'reset') adminReset();
+      else if (act === 'clearlogs') adminClearLogs();
       else if (act === 'edit') adminEdit();
       else if (act === 'adminrevive') adminRevive();
       else if (act === 'backup') adminBackup();
@@ -982,6 +984,54 @@ function startBlinking() {
 }
 
 // ────────────────────────────────────────────────────────────
+// 캐릭터 말풍선 (짧은 대사 간헐적 표시)
+// ────────────────────────────────────────────────────────────
+function showChatBubble(text) {
+  if (!text) return;
+  const petArt = document.getElementById('pet-art');
+  if (!petArt) return;
+
+  // 기존 말풍선 제거 (중복 방지)
+  const old = petArt.parentNode.querySelector('.chat-bubble');
+  if (old) old.remove();
+
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble';
+  bubble.textContent = text;
+  petArt.parentNode.style.position = 'relative';
+  petArt.parentNode.appendChild(bubble);
+
+  setTimeout(() => bubble.remove(), 4000);
+}
+
+let bubbleTimer = null;
+function startBubbleTimer() {
+  if (bubbleTimer) clearTimeout(bubbleTimer);
+
+  const attempt = () => {
+    if (!currentPet || currentPet.isDead) return;
+
+    // 현재 메인 말풍선이 방금 전에 떴으면 스킵 (겹침 방지)
+    const visibleSpeech = getVisibleSpeech(currentPet, currentUser.name);
+    const recentlySpoke = visibleSpeech && (Date.now() - (visibleSpeech.at || 0)) < 15000;
+    if (recentlySpoke) return;
+
+    const text = pickBubbleSpeech(currentPet);
+    if (text) showChatBubble(text);
+  };
+
+  // 15-40초마다 랜덤하게
+  const scheduleNext = () => {
+    const delay = 15000 + Math.random() * 25000;
+    bubbleTimer = setTimeout(() => {
+      attempt();
+      scheduleNext();
+    }, delay);
+  };
+  scheduleNext();
+}
+
+// ────────────────────────────────────────────────────────────
 // 추가 기능
 // ────────────────────────────────────────────────────────────
 async function handleGreeting(greetKey, rawInput) {
@@ -1095,8 +1145,10 @@ function initDailyTalk(pet) {
 
 function showTalkMenu() {
   if (!currentPet || currentPet.isDead) return;
+
+  // EGG 단계: 대화 불가 → 메시지 남기기 UI로 대체
   if (currentPet.stage === 'EGG') {
-    appendSystemLog('⚠ 아직 대화할 수 없습니다. 부화를 기다려주세요.', 'warn');
+    showEggMessageUI();
     return;
   }
 
@@ -1114,6 +1166,118 @@ function showTalkMenu() {
   }
 
   renderTalkMenu();
+}
+
+// ────────────────────────────────────────────────────────────
+// EGG 메시지 남기기 UI — 알에게 말을 걸면 부화 후 기억
+// ────────────────────────────────────────────────────────────
+function showEggMessageUI() {
+  // 이미 열려있으면 닫기
+  const existing = document.getElementById('egg-msg-modal');
+  if (existing) { existing.remove(); return; }
+
+  // 본인이 이미 남긴 메시지
+  const existingMsgs = (currentPet.eggMessages || []).filter(m => m.user === currentUser.name);
+
+  const modal = document.createElement('div');
+  modal.id = 'egg-msg-modal';
+  modal.className = 'talk-modal';
+  modal.innerHTML = `
+    <div class="talk-modal-head">
+      <span>▶ 알에게 메시지를 남긴다</span>
+      <span class="talk-close" id="egg-msg-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body" style="display:block;padding:12px;">
+      <div style="color:#8fb39a;font-size:11px;margin-bottom:8px;line-height:1.5;">
+        알은 아직 눈도 뜨지 않았지만, 네 목소리는 들을 수 있을지도 모른다.<br>
+        부화한 뒤, 이 말을 기억해낼지도 모른다.
+      </div>
+      <textarea id="egg-msg-input" rows="3" maxlength="80"
+        style="width:100%;background:#000;border:1px solid #2d5a3e;color:#03B352;
+        font-family:inherit;font-size:12px;padding:8px;resize:none;"
+        placeholder="너에게 하고 싶은 말... (최대 80자)"></textarea>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;">
+        <span style="color:#6b8f76;font-size:10px;" id="egg-msg-counter">0 / 80</span>
+        <button id="egg-msg-submit" style="background:#0a1410;border:1px solid #03B352;color:#03B352;
+          padding:4px 14px;cursor:pointer;font-family:inherit;font-size:11px;">
+          말 걸어두기
+        </button>
+      </div>
+      ${existingMsgs.length > 0 ? `
+        <div style="margin-top:14px;border-top:1px solid #2d5a3e;padding-top:10px;">
+          <div style="color:#8fb39a;font-size:10px;margin-bottom:6px;">
+            ◢ 네가 이미 남긴 메시지 (${existingMsgs.length}개)
+          </div>
+          ${existingMsgs.map(m => `
+            <div style="font-size:11px;color:#c9c9c9;padding:4px 0;line-height:1.4;">
+              · ${m.text.replace(/</g, '&lt;')}
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  const input = document.getElementById('egg-msg-input');
+  const counter = document.getElementById('egg-msg-counter');
+  input.focus();
+  input.addEventListener('input', () => {
+    counter.textContent = `${input.value.length} / 80`;
+  });
+
+  document.getElementById('egg-msg-close').addEventListener('click', () => modal.remove());
+  document.getElementById('egg-msg-submit').addEventListener('click', handleEggMessage);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleEggMessage();
+  });
+}
+
+async function handleEggMessage() {
+  const input = document.getElementById('egg-msg-input');
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  if (text.length > 80) {
+    appendSystemLog('⚠ 메시지가 너무 깁니다 (최대 80자)', 'warn');
+    return;
+  }
+
+  currentPet.eggMessages = currentPet.eggMessages || [];
+  currentPet.eggMessages.push({
+    user: currentUser.name,
+    text,
+    at: Date.now(),
+  });
+
+  // 유저 1명당 3개까지만
+  const userMsgs = currentPet.eggMessages.filter(m => m.user === currentUser.name);
+  if (userMsgs.length > 3) {
+    // 본인 것 중 가장 오래된 것 제거
+    const otherMsgs = currentPet.eggMessages.filter(m => m.user !== currentUser.name);
+    const myRecentMsgs = userMsgs.slice(-3);
+    currentPet.eggMessages = [...otherMsgs, ...myRecentMsgs];
+  }
+
+  // 소소한 효과
+  showEmote('heart');
+
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'WHISPER',
+    text: `💌 알에게 속삭였다: "${text.substring(0, 30)}${text.length > 30 ? '...' : ''}"`,
+    type: 'action',
+    viewer: currentUser.name,  // 본인에게만 보이는 로그
+  });
+
+  const modal = document.getElementById('egg-msg-modal');
+  if (modal) modal.remove();
+
+  showToast('💌 말을 전했다. 알이 움찔했다.', 'personality');
 }
 
 function renderTalkMenu() {
@@ -1346,7 +1510,15 @@ async function doRevive() {
   });
 }
 
-function doLogout() {
+async function doLogout() {
+  // presence에서 즉시 제거 (다른 크루에게 바로 반영)
+  if (currentUser && !currentUser.isAdmin) {
+    try {
+      await Backend.removePresence(currentUser.name);
+    } catch (err) {
+      console.error('presence 제거 실패:', err);
+    }
+  }
   sessionStorage.removeItem('nk_user');
   location.reload();
 }
@@ -1791,17 +1963,18 @@ function adminStatus() {
 
 async function adminClearLogs() {
   if (!currentUser.isAdmin) return;
-  if (!confirm('모든 로그를 삭제합니다. 계속할까요?')) return;
-  if (CONFIG.LOCAL_TEST_MODE) {
-    localStorage.removeItem('nk_logs');
+  if (!confirm('로그만 전체 삭제합니다 (캐릭터 상태는 유지). 계속할까요?')) return;
+
+  try {
+    await Backend.clearLogs();
+    logs = [];
+    showToast('⚙ 로그 전체 삭제 완료', 'personality');
+    // 로그 삭제 기록 자체는 남기지 않음 (깔끔하게)
+    setTimeout(() => location.reload(), 500);
+  } catch (err) {
+    console.error(err);
+    appendSystemLog(`⚠ 로그 삭제 실패: ${err.message}`, 'warn');
   }
-  logs = [];
-  // 빈 배열로 다시 리스너 호출
-  await Backend.addLog({
-    user: currentUser.name, action: 'CLEAR',
-    text: '⚙ 로그 초기화됨',
-    type: 'admin',
-  });
 }
 
 // ── 시뮬레이션 도구 ─────────────────────────────────
@@ -1930,9 +2103,27 @@ async function startGame() {
 
   // 눈 깜빡임 애니메이션 시작
   startBlinking();
+  // 짧은 말풍선 타이머 시작
+  startBubbleTimer();
 
   // 자동 스냅샷 (1시간마다, 중복 방지는 localStorage)
   startAutoSnapshot();
+
+  // 브라우저 탭 닫기/이동 시 presence 제거
+  if (!currentUser.isAdmin) {
+    window.addEventListener('beforeunload', () => {
+      // sendBeacon 또는 동기 처리 (브라우저가 페이지 떠날 때 비동기는 못 쓸 수 있음)
+      try {
+        Backend.removePresence(currentUser.name);
+      } catch (e) { /* 무시 */ }
+    });
+    // pagehide도 (모바일에서 더 신뢰)
+    window.addEventListener('pagehide', () => {
+      try {
+        Backend.removePresence(currentUser.name);
+      } catch (e) { /* 무시 */ }
+    });
+  }
 
   // 로그인 시 맞이 대사 (EGG 단계 아니고, 관리자 아닐 때)
   setTimeout(() => {
@@ -1970,12 +2161,16 @@ async function startGame() {
         prevUser: prevUser || '누군가',
         fav, least,
       };
-      // 위기 대사 > 회상 대사(10%) > 시간대 인사(20%) > 유휴
+      // 위기 대사 > EGG 메시지 회상(15%) > 회상 대사(10%) > 시간대 인사(20%) > 유휴
       const warn = getWarningSpeech(currentPet, vars);
+      const hasEggMsgs = (currentPet.eggMessages?.length || 0) > 0
+                      && currentPet.stage !== 'EGG';
+      const shouldRecallEgg = hasEggMsgs && Math.random() < 0.15;
       const shouldRecall = currentPet.stage !== 'EGG' && currentPet.stage !== 'BABY'
                          && (currentPet.memorableQuotes?.length || 0) > 0
                          && Math.random() < 0.1;
       const spk = warn
+        || (shouldRecallEgg ? getEggMessageRecall(currentPet, vars) : null)
         || (shouldRecall ? getQuoteRecall(currentPet, vars) : null)
         || (Math.random() < 0.2 ? getTimeGreeting(currentPet, vars) : null)
         || getIdleSpeech(currentPet, vars);
