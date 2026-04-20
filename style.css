@@ -428,6 +428,14 @@ body {
    캐릭터 옆에 잠깐 떠오르는 반응
    ────────────────────────────────────── */
 .pet-art { position: relative; }
+.pet-art:hover {
+  filter: brightness(1.15);
+  transition: filter 0.15s;
+}
+.pet-art:active {
+  transform: scale(0.98);
+  transition: transform 0.08s;
+}
 .emote-layer {
   position: absolute;
   top: 10px;

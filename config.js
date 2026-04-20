@@ -64,8 +64,42 @@ export const CONFIG = {
     train: { energy: -18, hunger: -8, happy: -4, exp: 20, label: 'TRAIN', desc: '훈련하기'  },
   },
 
-  // ── FEED 서브메뉴 ────────────────────────────────────
-  // 각 종류별로 스탯 효과 약간 다름. 기본 feed에 덧씌워짐
+  // ── FEED 서브메뉴 (단계별 차별화) ────────────────────
+  // 세계관: 영양 공급 시스템이 단계에 따라 다름
+  FEED_MENU_BY_STAGE: {
+    EGG: [
+      { key: 'warmth',    label: '따뜻한 공기',      override: { hunger: 18, happy: 5 } },
+      { key: 'nutrient',  label: '영양액 주입',      override: { hunger: 22, happy: 3 } },
+      { key: 'sonic',     label: '저주파 진동',      override: { hunger: 14, happy: 8 } },
+      { key: 'tempctl',   label: '온도 조절',        override: { hunger: 16, happy: 6, hygiene: 4 } },
+    ],
+    BABY: [
+      { key: 'milk',      label: '보급 영양식',      override: { hunger: 22, happy: 8 } },
+      { key: 'paste',     label: '영양 페이스트',    override: { hunger: 20, happy: 4 } },
+      { key: 'porridge',  label: '따뜻한 죽',        override: { hunger: 18, happy: 10 } },
+      { key: 'candy',     label: '달콤한 알약',      override: { hunger: 10, happy: 14, hygiene: -3 } },
+    ],
+    CHILD: [
+      { key: 'bread',     label: '따뜻한 빵',        override: { hunger: 22, happy: 5 } },
+      { key: 'soup',      label: '뜨끈한 수프',      override: { hunger: 18, happy: 6, hygiene: -1 } },
+      { key: 'fruit',     label: '붉은 과일',        override: { hunger: 15, happy: 8 } },
+      { key: 'sweet',     label: '단 것',            override: { hunger: 12, happy: 12, hygiene: -4 } },
+    ],
+    TEEN: [
+      { key: 'ration',    label: '규정 배급식',      override: { hunger: 20, happy: 3 } },
+      { key: 'stew',      label: '고기 스튜',        override: { hunger: 25, happy: 5 } },
+      { key: 'premium',   label: '특별 메뉴',        override: { hunger: 20, happy: 15, hygiene: -2 } },
+      { key: 'stolen',    label: '몰래 빼온 것',     override: { hunger: 15, happy: 18 } },
+    ],
+    ADULT: [
+      { key: 'last',      label: '마지막 정찬',      override: { hunger: 30, happy: 10 } },
+      { key: 'shared',    label: '나눠 먹기',        override: { hunger: 18, happy: 18 } },
+      { key: 'bitter',    label: '쓴 차',            override: { hunger: 10, happy: 8 } },
+      { key: 'sugar',     label: '달콤한 선물',      override: { hunger: 15, happy: 20, hygiene: -3 } },
+    ],
+  },
+
+  // 구버전 호환용 (기본 CHILD)
   FEED_MENU: [
     { key: 'bread',   label: '따뜻한 빵',     override: { hunger: 22, happy: 5 } },
     { key: 'soup',    label: '뜨끈한 수프',   override: { hunger: 18, happy: 6, hygiene: -1 } },
@@ -73,7 +107,41 @@ export const CONFIG = {
     { key: 'sweet',   label: '단 것',         override: { hunger: 12, happy: 12, hygiene: -4 } },
   ],
 
-  // ── PLAY 서브메뉴 ────────────────────────────────────
+  // ── PLAY 서브메뉴 (단계별 차별화) ────────────────────
+  PLAY_MENU_BY_STAGE: {
+    EGG: [
+      { key: 'hum',       label: '콧노래 불러주기',  override: { happy: 18, energy: -4, hunger: -2 } },
+      { key: 'caress',    label: '알 쓰다듬기',      override: { happy: 22, energy: -3, hunger: -1 } },
+      { key: 'rock',      label: '흔들어 주기',      override: { happy: 15, energy: -6, hunger: -3 } },
+      { key: 'watch',     label: '조용히 지켜보기',  override: { happy: 10, energy: -1 } },
+    ],
+    BABY: [
+      { key: 'peekaboo',  label: '까꿍 놀이',        override: { happy: 22, energy: -8, hunger: -3 } },
+      { key: 'rattle',    label: '장난감 흔들기',    override: { happy: 18, energy: -6, hunger: -2 } },
+      { key: 'lullaby',   label: '자장가 불러주기',  override: { happy: 15, energy: -3 } },
+      { key: 'tickle',    label: '간지럽히기',       override: { happy: 20, energy: -10, hunger: -4 } },
+    ],
+    CHILD: [
+      { key: 'chase',     label: '술래잡기',         override: { happy: 22, energy: -15, hunger: -5 } },
+      { key: 'story',     label: '이야기하기',       override: { happy: 18, energy: -5, hunger: -2 } },
+      { key: 'hide',      label: '숨바꼭질',         override: { happy: 20, energy: -10, hunger: -3 } },
+      { key: 'draw',      label: '그림 그리기',      override: { happy: 16, energy: -6, hunger: -2 } },
+    ],
+    TEEN: [
+      { key: 'talk',      label: '속마음 얘기',      override: { happy: 20, energy: -4, hunger: -2 } },
+      { key: 'spar',      label: '가벼운 겨루기',    override: { happy: 18, energy: -15, hunger: -5 } },
+      { key: 'music',     label: '음악 듣기',        override: { happy: 22, energy: -3 } },
+      { key: 'stargaze',  label: '별 헤기',          override: { happy: 15, energy: -2 } },
+    ],
+    ADULT: [
+      { key: 'reminisce', label: '추억 더듬기',      override: { happy: 18, energy: -3, hunger: -1 } },
+      { key: 'silence',   label: '말없이 있기',      override: { happy: 15, energy: -1 } },
+      { key: 'dance',     label: '함께 춤추기',      override: { happy: 25, energy: -12, hunger: -4 } },
+      { key: 'promise',   label: '약속 나누기',      override: { happy: 20, energy: -2 } },
+    ],
+  },
+
+  // 구버전 호환용
   PLAY_MENU: [
     { key: 'chase',   label: '술래잡기',  override: { happy: 22, energy: -15, hunger: -5 } },
     { key: 'story',   label: '이야기하기', override: { happy: 18, energy: -5,  hunger: -2 } },
@@ -103,16 +171,18 @@ export const CONFIG = {
   // ── 사망/부활 ─────────────────────────────────────────
   MAX_REVIVES: 3,
 
-   // ── Firebase 설정 ────────────────────────────────────
+  // ── Firebase 설정 (2단계에서 채움) ────────────────────
   FIREBASE: {
-    apiKey:            'AIzaSyASN1ZnDEGyyO22_FdjlJVYd3ADLjfO0t0',
-    authDomain:        'calla-lily-01.firebaseapp.com',
-    projectId:         'calla-lily-01',
-    storageBucket:     'calla-lily-01.firebasestorage.app',
-    messagingSenderId: '347965378281',
-    appId:             '1:347965378281:web:8c05701a2705ead95faa78',
+    apiKey:            'YOUR_API_KEY',
+    authDomain:        'YOUR_PROJECT.firebaseapp.com',
+    projectId:         'YOUR_PROJECT_ID',
+    storageBucket:     'YOUR_PROJECT.appspot.com',
+    messagingSenderId: 'YOUR_SENDER_ID',
+    appId:             'YOUR_APP_ID',
   },
 
   // ── 로컬 테스트 모드 ──────────────────────────────────
-  LOCAL_TEST_MODE: false,
+  // true: localStorage로 동작 (혼자 테스트용)
+  // false: Firebase 실시간 동기화 (24명 공유)
+  LOCAL_TEST_MODE: true,
 };

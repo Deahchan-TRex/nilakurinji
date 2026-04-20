@@ -19,7 +19,7 @@ import {
   recordMemorableQuote, getQuoteRecall, getEggMessageRecall,
   getNextTopicChoices, getTopicBridge,
   matchGreeting, getGreetingResponse,
-  pickBubbleSpeech,
+  pickBubbleSpeech, pickTapSpeech,
 } from './speeches.js';
 
 // ────────────────────────────────────────────────────────────
@@ -450,9 +450,12 @@ function showActionSubmenu(action) {
   const existing = document.getElementById('submenu-modal');
   if (existing) { existing.remove(); return; }
 
-  const menuDef = action === 'feed' ? CONFIG.FEED_MENU
-                : action === 'play' ? CONFIG.PLAY_MENU
-                : null;
+  const stage = currentPet.stage || 'CHILD';
+  const menuDef = action === 'feed'
+    ? (CONFIG.FEED_MENU_BY_STAGE?.[stage] || CONFIG.FEED_MENU)
+    : action === 'play'
+      ? (CONFIG.PLAY_MENU_BY_STAGE?.[stage] || CONFIG.PLAY_MENU)
+      : null;
   if (!menuDef) return;
 
   const titles = {
@@ -547,6 +550,7 @@ async function handleAction(action, submenuItem = null) {
     name: currentPet.name,
     fav, least,
     submenuLabel: submenuItem?.label,
+    submenuKey: submenuItem?.key,
   });
   if (speech) {
     saveSpeechForUser(currentPet, currentUser.name, { text: speech, at: Date.now(), to: currentUser.key });
@@ -568,6 +572,7 @@ async function handleAction(action, submenuItem = null) {
     user: currentUser.name, action: actionLabel,
     text: effTxt || eff.desc,
     type: 'action',
+    ...(currentUser.isAdmin ? { viewer: currentUser.name } : {}),
   });
 }
 
@@ -589,6 +594,8 @@ function render() {
   // 캐릭터 아트 (표정 동적)
   document.getElementById('pet-art').textContent = renderTeddy(currentPet);
   document.getElementById('stage-badge').textContent = currentPet.stage;
+  // 탭 리스너 유지 (DOM이 바뀌었을 수도 있으니 확인)
+  attachPetTapListener();
 
   // 단계별 태그
   const stageTags = {
@@ -902,6 +909,19 @@ function appendSystemLog(text, type = 'system') {
 }
 
 // ────────────────────────────────────────────────────────────
+// 관리자 행동 로그 래퍼 — 관리자 액션은 본인에게만 보이도록
+// admin 타입이거나 관리자가 수행한 모든 액션을 본인 로그로 격리
+// (단, EVOLVE/archive 같은 시스템 이벤트는 viewer 없이 공개)
+// ────────────────────────────────────────────────────────────
+async function logAdminAction(entry) {
+  // 관리자가 호출한 경우 viewer를 본인으로 (다른 크루에겐 안 보임)
+  if (currentUser?.isAdmin) {
+    return Backend.addLog({ ...entry, viewer: currentUser.name });
+  }
+  return Backend.addLog(entry);
+}
+
+// ────────────────────────────────────────────────────────────
 // 개인 대사 저장/조회 헬퍼
 // 특정 유저에게 한 대사는 그 유저에게만 말풍선으로 보임
 // 공용 대사(진화 순간 등)는 lastSpeech에만 저장되어 모두에게 보임
@@ -1089,6 +1109,55 @@ function startBubbleTimer() {
 }
 
 // ────────────────────────────────────────────────────────────
+// ASCII 캐릭터 클릭 시 대사 표시
+// ────────────────────────────────────────────────────────────
+let lastTapAt = 0;
+function handlePetTap() {
+  if (!currentPet || currentPet.isDead) return;
+
+  // 연타 방지 (1초 쿨다운)
+  const now = Date.now();
+  if (now - lastTapAt < 1000) return;
+  lastTapAt = now;
+
+  const { fav, least } = getCrewFavorites(currentPet);
+  const speech = pickTapSpeech(currentPet, {
+    user: currentUser.name,
+    name: currentPet.name,
+    fav, least,
+  });
+
+  if (speech) {
+    saveSpeechForUser(currentPet, currentUser.name, {
+      text: speech, at: now, to: currentUser.key,
+    });
+    Backend.savePet(currentPet);
+  }
+
+  // 가벼운 반응 이모티콘
+  const tapEmotes = ['heart2', 'sparkle', 'note', 'bubble'];
+  const picked = tapEmotes[Math.floor(Math.random() * tapEmotes.length)];
+  showEmote(picked);
+
+  // 아주 가벼운 bond (하루 총량 제한은 없지만 값 폭주 방지)
+  currentPet.bond = Math.min(100, (currentPet.bond || 0) + 0.05);
+}
+
+function attachPetTapListener() {
+  const petArt = document.getElementById('pet-art');
+  if (!petArt) return;
+  // 중복 방지: 이미 리스너가 있으면 추가 안 함
+  if (petArt.dataset.tapListener === 'on') return;
+  petArt.style.cursor = 'pointer';
+  petArt.addEventListener('click', handlePetTap);
+  petArt.addEventListener('touchend', e => {
+    e.preventDefault();  // 클릭 이벤트 중복 방지
+    handlePetTap();
+  });
+  petArt.dataset.tapListener = 'on';
+}
+
+// ────────────────────────────────────────────────────────────
 // 추가 기능
 // ────────────────────────────────────────────────────────────
 async function handleGreeting(greetKey, rawInput) {
@@ -1165,6 +1234,7 @@ async function handleGreeting(greetKey, rawInput) {
     user: currentUser.name, action: 'CHAT',
     text: `💭 "${rawInput}"`,
     type: 'action',
+    ...(currentUser.isAdmin ? { viewer: currentUser.name } : {}),
   });
 }
 
@@ -1524,6 +1594,7 @@ async function handleTalk(topicKey) {
     user: currentUser.name, action: 'TALK',
     text: `💬 ${SPEECHES.talkTopics[topicKey]?.label || topicKey}`,
     type: 'action',
+    ...(currentUser.isAdmin ? { viewer: currentUser.name } : {}),
   });
 
   // 모달 비활성화 → 잠시 후 다음 메뉴
@@ -1643,6 +1714,7 @@ async function adminRevive() {
     user: currentUser.name, action: 'REVIVE',
     text: '⚙ 관리자 강제 부활 (카운트 소모 없음)',
     type: 'admin',
+  viewer: currentUser.name,
   });
 }
 
@@ -1655,6 +1727,7 @@ async function adminKill() {
     user: currentUser.name, action: 'KILL',
     text: '⚙ 관리자 강제 사망 (테스트)',
     type: 'admin',
+  viewer: currentUser.name,
   });
 }
 
@@ -1685,6 +1758,7 @@ async function adminSet(stat, valStr) {
     user: currentUser.name, action: 'SET',
     text: `⚙ ${stat} = ${val}`,
     type: 'admin',
+  viewer: currentUser.name,
   });
 }
 
@@ -1706,6 +1780,7 @@ async function adminEvolve(stageName) {
     user: currentUser.name, action: 'EVOLVE',
     text: `⚙ ${from} → ${s} (강제)`,
     type: 'admin',
+  viewer: currentUser.name,
   });
 }
 
@@ -1723,6 +1798,7 @@ async function adminBackup() {
     user: currentUser.name, action: 'BACKUP',
     text: '⚙ 백업 파일 다운로드',
     type: 'admin',
+  viewer: currentUser.name,
   });
 }
 
@@ -1742,6 +1818,7 @@ async function adminSnapshotSave() {
       user: currentUser.name, action: 'SNAPSHOT',
       text: `💾 스냅샷 생성: "${finalLabel}"`,
       type: 'admin',
+    viewer: currentUser.name,
     });
   } catch (err) {
     console.error(err);
@@ -1867,6 +1944,7 @@ async function adminSnapshotList() {
           user: currentUser.name, action: 'RESTORE',
           text: `♻ 스냅샷 복원: "${label}"${deleteLogs ? ' + 이후 로그 삭제' : ''}`,
           type: 'admin',
+        viewer: currentUser.name,
         });
 
         showToast(`♻ 복원 완료`, 'personality');
@@ -1938,6 +2016,7 @@ function adminRestore() {
         user: currentUser.name, action: 'RESTORE',
         text: `⚙ 백업 복원 완료 (${data.at || '-'})`,
         type: 'admin',
+      viewer: currentUser.name,
       });
     } catch (err) {
       appendSystemLog(`⚠ 복원 실패: ${err.message}`, 'warn');
@@ -1982,6 +2061,7 @@ async function adminAge(hoursStr) {
     user: currentUser.name, action: 'AGE',
     text: `⚙ 나이 ${hours > 0 ? '+' : ''}${hours}h 조정`,
     type: 'admin',
+  viewer: currentUser.name,
   });
 }
 
@@ -2086,6 +2166,7 @@ async function adminEditStat() {
         user: currentUser.name, action: 'EDIT',
         text: `⚙ 스탯 편집 (${changed}개 변경)`,
         type: 'admin',
+      viewer: currentUser.name,
       });
       showToast(`⚙ ${changed}개 스탯 수정됨`, 'personality');
     }
@@ -2174,6 +2255,7 @@ async function adminEditPersona() {
         user: currentUser.name, action: 'EDIT',
         text: `⚙ 성격 편집 (${changed}축 변경)`,
         type: 'admin',
+      viewer: currentUser.name,
       });
       showToast(`⚙ 성격 ${changed}축 수정됨`, 'personality');
     }
@@ -2210,6 +2292,7 @@ async function adminPersona(axis, valStr) {
     user: currentUser.name, action: 'PERSONA',
     text: `⚙ ${key} = ${val}`,
     type: 'admin',
+  viewer: currentUser.name,
   });
 }
 
@@ -2225,6 +2308,7 @@ async function adminSay(text) {
     user: currentUser.name, action: 'SAY',
     text: `⚙ 캐릭터 강제 대사: "${text}"`,
     type: 'admin',
+  viewer: currentUser.name,
   });
 }
 
@@ -2292,6 +2376,7 @@ async function adminSimJump(targetStage) {
       user: currentUser.name, action: 'SIM',
       text: '⚙ [시뮬] 강제 사망 상태',
       type: 'admin',
+    viewer: currentUser.name,
     });
     return;
   }
@@ -2322,6 +2407,7 @@ async function adminSimJump(targetStage) {
     user: currentUser.name, action: 'SIM',
     text: `⚙ [시뮬] ${stageUpper} 단계로 점프 (+${targetHour}h)`,
     type: 'admin',
+  viewer: currentUser.name,
   });
 }
 
@@ -2374,6 +2460,7 @@ async function adminPreset(preset) {
     user: currentUser.name, action: 'PRESET',
     text: `⚙ [프리셋] ${p.log}`,
     type: 'admin',
+  viewer: currentUser.name,
   });
 }
 
@@ -2404,6 +2491,8 @@ async function startGame() {
   startBlinking();
   // 짧은 말풍선 타이머 시작
   startBubbleTimer();
+  // ASCII 클릭 리스너 (첫 렌더 후 약간 지연해서 연결)
+  setTimeout(attachPetTapListener, 300);
 
   // 자동 스냅샷 (1시간마다, 중복 방지는 localStorage)
   startAutoSnapshot();
