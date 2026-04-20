@@ -2408,9 +2408,10 @@ async function adminForceRefresh() {
   )) return;
 
   try {
-    // 현재 pet에 임의 nonce를 찍어서 저장 → 다른 클라이언트 감지
-    const forceVersion = `force-${Date.now()}`;
-    const patched = { ...currentPet, appVersion: forceVersion };
+    // forceRefreshAt에 현재 시각을 찍어서 저장
+    // 각 클라이언트는 자기 세션 시작 이후의 값만 반응
+    const now = Date.now();
+    const patched = { ...currentPet, forceRefreshAt: now };
     await Backend.savePet(patched);
 
     showToast('⚡ 전체 크루에게 새로고침 신호 전송됨', 'personality');
@@ -2420,7 +2421,7 @@ async function adminForceRefresh() {
       type: 'admin',
       viewer: currentUser.name,
     });
-    // 관리자 본인은 3초 후 새로고침 (다른 유저와 마찬가지로)
+    // 관리자 본인은 3초 후 새로고침
     setTimeout(() => location.reload(true), 3000);
   } catch (err) {
     console.error(err);
@@ -2570,19 +2571,17 @@ async function startGame() {
   renderMain();
   await Backend.init();
 
-  // 내가 지금 로드한 앱 버전 기억
-  const myLoadedVersion = CONFIG.APP_VERSION;
-  sessionStorage.setItem('nk_app_version', myLoadedVersion);
-  console.log('[version] 현재 로드된 버전:', myLoadedVersion);
+  // 세션 시작 시각 기록 (이 이후의 강제 새로고침만 반응)
+  const mySessionStartAt = Date.now();
+  console.log('[session] 시작 시각:', new Date(mySessionStartAt).toLocaleTimeString());
 
   Backend.onPetChange(pet => {
     currentPet = pet;
 
-    // 원격 버전 체크: 관리자가 버전 올렸으면 자동 새로고침
-    if (pet.appVersion && pet.appVersion !== myLoadedVersion) {
-      console.warn('[version] ⚠ 새 버전 감지:', pet.appVersion, '/ 현재:', myLoadedVersion);
-      console.warn('[version] 3초 후 자동 새로고침...');
-      // 잠깐 UI에 안내 후 새로고침
+    // 강제 새로고침 감지: pet.forceRefreshAt이 내 세션 시작 이후여야만 반응
+    // (APP_VERSION 기반 감지는 무한루프 원인이라 제거)
+    if (pet.forceRefreshAt && pet.forceRefreshAt > mySessionStartAt) {
+      console.warn('[refresh] ⚡ 강제 새로고침 신호 감지:', new Date(pet.forceRefreshAt).toLocaleTimeString());
       showToast(`⚡ 업데이트 감지: 3초 후 자동 새로고침`, 'personality');
       setTimeout(() => location.reload(true), 3000);
       return;
