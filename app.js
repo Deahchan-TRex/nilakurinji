@@ -770,6 +770,16 @@ function render() {
   const onlineCrew = [];
   const offlineCrew = [];
 
+  // 디버깅: presenceMap과 MEMBERS 이름이 정확히 일치하는지
+  const presenceKeys = Object.keys(presenceMap);
+  if (presenceKeys.length > 0) {
+    const memberNames = CONFIG.MEMBERS.map(m => m.name);
+    const orphans = presenceKeys.filter(k => !memberNames.includes(k));
+    if (orphans.length > 0) {
+      console.warn('[presence] ⚠ MEMBERS에 없는 이름:', orphans);
+    }
+  }
+
   for (const m of CONFIG.MEMBERS) {
     const lastSeen = presenceMap[m.name];
     const isOnline = lastSeen && (now - lastSeen) < ONLINE_WINDOW;
@@ -821,27 +831,31 @@ function render() {
   currentPet.narrativeShownKeyBy = currentPet.narrativeShownKeyBy || {};
   const lastShown = currentPet.narrativeShownKeyBy[viewerName];
 
-  if (narrativeKey && lastShown !== narrativeKey) {
+  // 중요: narrativeKey가 바뀌어야만 실행 (render마다 Backend 쓰기 방지)
+  if (narrativeKey && lastShown !== narrativeKey && !currentPet._narrativeProcessing) {
+    currentPet._narrativeProcessing = true;  // 동시 실행 방지
     const narrative = getStageNarrative(currentPet);
     if (narrative) {
       currentPet.narrativeShownKeyBy[viewerName] = narrativeKey;
 
-      // EGG 단계에서는 말풍선 자리를 해설이 차지 (캐릭터가 말을 못 하니까)
-      // 개인 대사로 저장해 보는 사람 기준으로 표시
+      // EGG 단계에서는 말풍선 자리를 해설이 차지
       if (currentPet.stage === 'EGG') {
         saveSpeechForUser(currentPet, viewerName, {
           text: narrative.text, at: Date.now(), to: viewerName,
         });
       }
 
-      Backend.savePet(currentPet);
-      // viewerName을 심어서 "이 유저에게만 보이는 로그"로 기록
+      Backend.savePet(currentPet).finally(() => {
+        delete currentPet._narrativeProcessing;
+      });
       Backend.addLog({
         user: null, action: 'ARCHIVE',
         text: narrative.text,
         type: 'system',
-        viewer: viewerName,  // 이 필드가 있으면 해당 유저에게만 보임
+        viewer: viewerName,
       });
+    } else {
+      delete currentPet._narrativeProcessing;
     }
   }
 
@@ -2482,9 +2496,13 @@ async function startGame() {
 
   // 관리자는 presence에 잡히지 않도록
   if (!currentUser.isAdmin) {
+    // 즉시 1번
     Backend.updatePresence(currentUser.name);
-    // 2분마다 heartbeat
-    setInterval(() => Backend.updatePresence(currentUser.name), 2 * 60 * 1000);
+    // 10초 후 한 번 더 (첫 쓰기가 실패했을 경우 대비)
+    setTimeout(() => Backend.updatePresence(currentUser.name), 10 * 1000);
+    // 이후 3분마다 heartbeat (온라인 판정 5분이므로 여유)
+    // 쿼터 절약을 위해 너무 자주 쓰지 않음
+    setInterval(() => Backend.updatePresence(currentUser.name), 3 * 60 * 1000);
   }
 
   // 눈 깜빡임 애니메이션 시작
@@ -2537,12 +2555,21 @@ async function startGame() {
   }, 500);
 
   // 주기적 틱 (5초) + 유휴 대사
+  let lastIdleWriteAt = 0;  // 유휴 대사 쓰기 쿨다운
   setInterval(() => {
     if (!currentPet || currentPet.isDead) return;
 
-    // 마지막 대사 10분 이상 경과 시 자동 대사
-    const last = currentPet.lastSpeech?.at || 0;
-    if (Date.now() - last > 10 * 60 * 1000) {
+    // 개인 대사 기준으로 마지막 시점 계산 (공용 lastSpeech로는 판정 오류 발생)
+    const personalSpeech = getVisibleSpeech(currentPet, currentUser.name);
+    const last = personalSpeech?.at || 0;
+    const now = Date.now();
+
+    // 조건 1: 마지막 대사 10분 이상 경과
+    // 조건 2: 유휴 대사 쓰기 후 최소 5분 쿨다운 (무한 쓰기 방지)
+    const elapsedSinceLastSpeech = now - last;
+    const elapsedSinceIdleWrite = now - lastIdleWriteAt;
+
+    if (elapsedSinceLastSpeech > 10 * 60 * 1000 && elapsedSinceIdleWrite > 5 * 60 * 1000) {
       const { fav, least } = getCrewFavorites(currentPet);
       const vars = {
         user: currentUser.name, name: currentPet.name,
@@ -2564,9 +2591,10 @@ async function startGame() {
         || getIdleSpeech(currentPet, vars);
       if (spk) {
         saveSpeechForUser(currentPet, currentUser.name, {
-          text: spk, at: Date.now(), to: currentUser.key
+          text: spk, at: now, to: currentUser.key
         });
         Backend.savePet(currentPet);
+        lastIdleWriteAt = now;  // 쿨다운 시작
       }
     }
     render();
