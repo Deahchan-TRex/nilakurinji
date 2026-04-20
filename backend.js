@@ -11,14 +11,24 @@ let db = null;
 // Firebase 초기화 (LOCAL_TEST_MODE이 false일 때만)
 // ────────────────────────────────────────────────────────────
 async function initFirebase() {
-  if (CONFIG.LOCAL_TEST_MODE) return;
+  if (CONFIG.LOCAL_TEST_MODE) {
+    console.warn('[Backend] ⚠ 로컬 테스트 모드입니다. Firebase 실시간 동기화 비활성화.');
+    console.warn('[Backend] 실제 이벤트에선 config.js에서 LOCAL_TEST_MODE: false 로 변경하세요.');
+    return;
+  }
+  try {
+    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+    const fs = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
 
-  const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
-  const fs = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-
-  const app = initializeApp(CONFIG.FIREBASE);
-  db = fs.getFirestore(app);
-  db._fns = fs;
+    const app = initializeApp(CONFIG.FIREBASE);
+    db = fs.getFirestore(app);
+    db._fns = fs;
+    console.log('[Backend] Firebase 초기화 성공 · projectId:', CONFIG.FIREBASE.projectId);
+  } catch (err) {
+    console.error('[Backend] ⚠ Firebase 초기화 실패:', err);
+    console.error('[Backend] config.js의 FIREBASE 설정값이 올바른지 확인하세요.');
+    throw err;
+  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -87,7 +97,14 @@ export const Backend = {
       listeners.pet.forEach(cb => cb(pet));
       return;
     }
-    await db._fns.setDoc(db._fns.doc(db, 'pet', 'main'), pet);
+    try {
+      await db._fns.setDoc(db._fns.doc(db, 'pet', 'main'), pet);
+      console.log('[pet] Firebase 저장 성공');
+    } catch (err) {
+      console.error('[pet] ⚠ Firebase 저장 실패! 보안 규칙 확인:', err);
+      console.error('[pet] 규칙 필요: match /pet/main { allow read, write: if true; }');
+      throw err;
+    }
   },
 
   onPetChange(callback) {
@@ -101,9 +118,18 @@ export const Backend = {
       this.getPet().then(p => { if (p) callback(p); });
       return;
     }
-    return db._fns.onSnapshot(db._fns.doc(db, 'pet', 'main'), snap => {
-      if (snap.exists()) callback(snap.data());
-    });
+    return db._fns.onSnapshot(
+      db._fns.doc(db, 'pet', 'main'),
+      snap => {
+        if (snap.exists()) {
+          console.log('[pet] 실시간 변경 수신 (stage:', snap.data().stage, ')');
+          callback(snap.data());
+        }
+      },
+      err => {
+        console.error('[pet] ⚠ 실시간 구독 실패! 보안 규칙 확인:', err);
+      }
+    );
   },
 
   async addLog(entry) {
@@ -119,11 +145,16 @@ export const Backend = {
       return;
     }
     // Firebase: 서버 타임스탬프(정확성) + atMs(즉시 표시용 fallback) 동시 저장
-    await db._fns.addDoc(db._fns.collection(db, 'logs'), {
-      ...entry,
-      at: db._fns.serverTimestamp(),
-      atMs: nowMs,  // 서버 타임이 확정되기 전에도 정렬/표시 가능하게
-    });
+    try {
+      await db._fns.addDoc(db._fns.collection(db, 'logs'), {
+        ...entry,
+        at: db._fns.serverTimestamp(),
+        atMs: nowMs,  // 서버 타임이 확정되기 전에도 정렬/표시 가능하게
+      });
+    } catch (err) {
+      console.error('[log] ⚠ 로그 저장 실패! 보안 규칙 확인:', err);
+      console.error('[log] 규칙 필요: match /logs/{logId} { allow read, create: if true; }');
+    }
   },
 
   onLogsChange(callback) {
@@ -142,18 +173,25 @@ export const Backend = {
       db._fns.orderBy('atMs', 'asc'),
       db._fns.limit(50)
     );
-    return db._fns.onSnapshot(q, snap => {
-      const arr = snap.docs.map(d => {
-        const data = d.data();
-        // at을 ms 숫자로 정규화 (serverTimestamp가 아직 pending이면 atMs 사용)
-        let atMs = data.atMs || 0;
-        if (data.at?.toMillis) {
-          atMs = data.at.toMillis();
-        }
-        return { ...data, at: atMs, _id: d.id };
-      });
-      callback(arr);
-    });
+    return db._fns.onSnapshot(
+      q,
+      snap => {
+        const arr = snap.docs.map(d => {
+          const data = d.data();
+          // at을 ms 숫자로 정규화 (serverTimestamp가 아직 pending이면 atMs 사용)
+          let atMs = data.atMs || 0;
+          if (data.at?.toMillis) {
+            atMs = data.at.toMillis();
+          }
+          return { ...data, at: atMs, _id: d.id };
+        });
+        console.log('[logs] 실시간 갱신:', arr.length, '개');
+        callback(arr);
+      },
+      err => {
+        console.error('[logs] ⚠ 실시간 구독 실패! 보안 규칙 확인:', err);
+      }
+    );
   },
 
   async reset() {
@@ -200,6 +238,7 @@ export const Backend = {
       const presence = JSON.parse(localStorage.getItem('nk_presence') || '{}');
       presence[userName] = Date.now();
       localStorage.setItem('nk_presence', JSON.stringify(presence));
+      console.log('[presence] (로컬) 업데이트:', userName);
       return;
     }
     try {
@@ -207,12 +246,14 @@ export const Backend = {
         db._fns.doc(db, 'presence', userName),
         {
           at: db._fns.serverTimestamp(),
-          atMs: Date.now(),  // serverTimestamp pending 대응
+          atMs: Date.now(),
           name: userName,
         }
       );
+      console.log('[presence] Firebase 쓰기 성공:', userName);
     } catch (err) {
-      console.error('presence 업데이트 실패:', err);
+      console.error('[presence] ⚠ Firebase 쓰기 실패! 보안 규칙을 확인하세요:', err);
+      console.error('[presence] 규칙에 이 부분이 있어야 합니다: match /presence/{crewName} { allow read, write: if true; }');
     }
   },
 
@@ -220,6 +261,12 @@ export const Backend = {
     if (CONFIG.LOCAL_TEST_MODE) {
       const presence = JSON.parse(localStorage.getItem('nk_presence') || '{}');
       callback(presence);
+      // 같은 브라우저 다른 탭/창 감지
+      window.addEventListener('storage', e => {
+        if (e.key === 'nk_presence' && e.newValue) {
+          callback(JSON.parse(e.newValue));
+        }
+      });
       return;
     }
     return db._fns.onSnapshot(
@@ -228,14 +275,17 @@ export const Backend = {
         const map = {};
         snap.docs.forEach(d => {
           const data = d.data();
-          // at을 ms로 정규화 (서버 타임 우선, 없으면 atMs)
           let atMs = data.atMs || 0;
           if (data.at?.toMillis) {
             atMs = data.at.toMillis();
           }
           map[d.id] = atMs;
         });
+        console.log('[presence] 구독 갱신:', Object.keys(map).length, '명 →', Object.keys(map).join(', '));
         callback(map);
+      },
+      err => {
+        console.error('[presence] ⚠ 구독 실패! 보안 규칙을 확인하세요:', err);
       }
     );
   },
