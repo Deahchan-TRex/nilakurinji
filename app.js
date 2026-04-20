@@ -31,6 +31,22 @@ let logs = [];
 let prevUser = null;
 let presenceMap = {};     // { userName: lastSeenMs }
 
+// 전역 타이머 ID (긴급 중단용)
+const timers = {
+  tick: null,
+  heartbeat: null,
+  autoSnapshot: null,
+  blink: null,
+  bubble: null,
+};
+
+function stopAllTimers() {
+  Object.values(timers).forEach(id => {
+    if (id) { clearInterval(id); clearTimeout(id); }
+  });
+  console.warn('[timers] 모든 타이머 중단됨');
+}
+
 // ────────────────────────────────────────────────────────────
 // 로그인 화면
 // ────────────────────────────────────────────────────────────
@@ -313,9 +329,9 @@ function renderCommandButtons() {
     presetBar.innerHTML = `
       <button class="cmd admin" data-act="preset-full">스탯 MAX</button>
       <button class="cmd admin" data-act="preset-low">스탯 LOW</button>
-      <button class="cmd admin" data-act="preset-active">활발/사교</button>
+      <button class="cmd admin" data-act="forcerefresh">⚡ 전체 새로고침</button>
+      <button class="cmd admin" data-act="killswitch">🔒 킬스위치</button>
       <button class="cmd admin" data-act="clearlogs">LOG 리셋</button>
-      <button class="cmd admin" data-act="backup">JSON 백업</button>
       <button class="cmd" data-act="lore">LORE</button>
     `;
 
@@ -365,6 +381,8 @@ function renderCommandButtons() {
       else if (act === 'play') showActionSubmenu('play');
       else if (act === 'reset') adminReset();
       else if (act === 'clearlogs') adminClearLogs();
+      else if (act === 'forcerefresh') adminForceRefresh();
+      else if (act === 'killswitch') adminKillSwitch();
       else if (act === 'edit') adminEdit();
       else if (act === 'edit-stat') adminEditStat();
       else if (act === 'edit-persona') adminEditPersona();
@@ -432,6 +450,8 @@ function handleCommand(raw) {
   if (head === 'narrate') return adminNarrate(args.join(' '));
   if (head === 'status') return adminStatus();
   if (head === 'clear-logs' || head === 'clearlogs') return adminClearLogs();
+  if (head === 'refresh' || head === 'force-refresh') return adminForceRefresh();
+  if (head === 'kill' || head === 'killswitch') return adminKillSwitch();
 
   appendSystemLog(`⚠ "${head}": 알 수 없는 명령입니다. help 입력.`, 'warn');
 }
@@ -2374,6 +2394,71 @@ async function adminClearLogs() {
   }
 }
 
+// ────────────────────────────────────────────────────────────
+// 긴급: 전체 크루 강제 새로고침 (버전 bump)
+// pet.appVersion을 임의로 변경해서 모든 접속자를 자동 새로고침
+// ────────────────────────────────────────────────────────────
+async function adminForceRefresh() {
+  if (!currentUser.isAdmin) return;
+  if (!confirm(
+    '⚡ 접속 중인 모든 크루의 화면을 자동 새로고침합니다.\n\n' +
+    '코드 업데이트 후 기존 탭의 버그 타이머를 끊을 때 유용합니다.\n' +
+    '(각자 화면에 "업데이트 감지" 안내 후 3초 뒤 reload)\n\n' +
+    '계속할까요?'
+  )) return;
+
+  try {
+    // 현재 pet에 임의 nonce를 찍어서 저장 → 다른 클라이언트 감지
+    const forceVersion = `force-${Date.now()}`;
+    const patched = { ...currentPet, appVersion: forceVersion };
+    await Backend.savePet(patched);
+
+    showToast('⚡ 전체 크루에게 새로고침 신호 전송됨', 'personality');
+    await Backend.addLog({
+      user: currentUser.name, action: 'BROADCAST',
+      text: `⚡ 전체 크루 강제 새로고침 신호 전송`,
+      type: 'admin',
+      viewer: currentUser.name,
+    });
+    // 관리자 본인은 3초 후 새로고침 (다른 유저와 마찬가지로)
+    setTimeout(() => location.reload(true), 3000);
+  } catch (err) {
+    console.error(err);
+    appendSystemLog(`⚠ 강제 새로고침 실패: ${err.message}`, 'warn');
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// 긴급: 킬스위치 — 모든 접속자의 타이머 중단
+// (쓰기 폭주 차단. 새로고침 없이도 5초/3분 타이머가 꺼짐)
+// ────────────────────────────────────────────────────────────
+async function adminKillSwitch() {
+  if (!currentUser.isAdmin) return;
+  const on = currentPet.stopTimers === true;
+  const msg = on
+    ? '🔓 킬스위치를 해제합니다. 타이머가 다시 작동합니다.'
+    : '🔒 킬스위치를 활성화합니다.\n\n' +
+      '모든 접속자의 자동 타이머(5초 틱, heartbeat 등)가 즉시 중단됩니다.\n' +
+      '행동 버튼은 정상 작동합니다. 쓰기 폭주 차단용 긴급 스위치입니다.\n\n계속할까요?';
+
+  if (!confirm(msg)) return;
+
+  try {
+    currentPet.stopTimers = !on;
+    await Backend.savePet(currentPet);
+    showToast(on ? '🔓 킬스위치 OFF' : '🔒 킬스위치 ON', 'personality');
+    await Backend.addLog({
+      user: currentUser.name, action: 'KILLSWITCH',
+      text: on ? '🔓 킬스위치 해제' : '🔒 킬스위치 활성화',
+      type: 'admin',
+      viewer: currentUser.name,
+    });
+  } catch (err) {
+    console.error(err);
+    appendSystemLog(`⚠ 킬스위치 실패: ${err.message}`, 'warn');
+  }
+}
+
 // ── 시뮬레이션 도구 ─────────────────────────────────
 
 /**
@@ -2485,7 +2570,32 @@ async function startGame() {
   renderMain();
   await Backend.init();
 
-  Backend.onPetChange(pet => { currentPet = pet; render(); });
+  // 내가 지금 로드한 앱 버전 기억
+  const myLoadedVersion = CONFIG.APP_VERSION;
+  sessionStorage.setItem('nk_app_version', myLoadedVersion);
+  console.log('[version] 현재 로드된 버전:', myLoadedVersion);
+
+  Backend.onPetChange(pet => {
+    currentPet = pet;
+
+    // 원격 버전 체크: 관리자가 버전 올렸으면 자동 새로고침
+    if (pet.appVersion && pet.appVersion !== myLoadedVersion) {
+      console.warn('[version] ⚠ 새 버전 감지:', pet.appVersion, '/ 현재:', myLoadedVersion);
+      console.warn('[version] 3초 후 자동 새로고침...');
+      // 잠깐 UI에 안내 후 새로고침
+      showToast(`⚡ 업데이트 감지: 3초 후 자동 새로고침`, 'personality');
+      setTimeout(() => location.reload(true), 3000);
+      return;
+    }
+
+    // 킬스위치: pet.stopTimers=true면 타이머 중단 (긴급 차단용)
+    if (pet.stopTimers === true) {
+      console.warn('[killswitch] ⚠ 관리자 킬스위치 활성화 - 타이머 모두 중단');
+      stopAllTimers();
+    }
+
+    render();
+  });
   Backend.onLogsChange(newLogs => { logs = newLogs; render(); });
 
   // 동접자(presence) 구독 & heartbeat
@@ -2502,7 +2612,10 @@ async function startGame() {
     setTimeout(() => Backend.updatePresence(currentUser.name), 10 * 1000);
     // 이후 3분마다 heartbeat (온라인 판정 5분이므로 여유)
     // 쿼터 절약을 위해 너무 자주 쓰지 않음
-    setInterval(() => Backend.updatePresence(currentUser.name), 3 * 60 * 1000);
+    timers.heartbeat = setInterval(
+      () => Backend.updatePresence(currentUser.name),
+      3 * 60 * 1000
+    );
   }
 
   // 눈 깜빡임 애니메이션 시작
@@ -2556,7 +2669,7 @@ async function startGame() {
 
   // 주기적 틱 (5초) + 유휴 대사
   let lastIdleWriteAt = 0;  // 유휴 대사 쓰기 쿨다운
-  setInterval(() => {
+  timers.tick = setInterval(() => {
     if (!currentPet || currentPet.isDead) return;
 
     // 개인 대사 기준으로 마지막 시점 계산 (공용 lastSpeech로는 판정 오류 발생)

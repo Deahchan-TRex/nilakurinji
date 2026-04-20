@@ -92,13 +92,16 @@ export const Backend = {
   },
 
   async savePet(pet) {
+    // appVersion 자동 태깅 (버전 전파용)
+    const tagged = { ...pet, appVersion: CONFIG.APP_VERSION };
+
     if (CONFIG.LOCAL_TEST_MODE) {
-      localStorage.setItem('nk_pet', JSON.stringify(pet));
-      listeners.pet.forEach(cb => cb(pet));
+      localStorage.setItem('nk_pet', JSON.stringify(tagged));
+      listeners.pet.forEach(cb => cb(tagged));
       return;
     }
     try {
-      await db._fns.setDoc(db._fns.doc(db, 'pet', 'main'), pet);
+      await db._fns.setDoc(db._fns.doc(db, 'pet', 'main'), tagged);
       console.log('[pet] Firebase 저장 성공');
     } catch (err) {
       console.error('[pet] ⚠ Firebase 저장 실패! 보안 규칙 확인:', err);
