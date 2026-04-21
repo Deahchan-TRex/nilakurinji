@@ -427,6 +427,59 @@ body {
    픽셀 말풍선 이모티콘 (하트/땀/별 등)
    캐릭터 옆에 잠깐 떠오르는 반응
    ────────────────────────────────────── */
+/* ──────────────────────────────────────
+   로그 점프 버튼 (위에서 볼 때 새 로그 알림)
+   ────────────────────────────────────── */
+.log-jump {
+  display: none;
+  position: absolute;
+  bottom: 8px;
+  right: 50%;
+  transform: translateX(50%);
+  background: #03B352;
+  color: #000;
+  border: none;
+  padding: 6px 14px;
+  font-family: 'VT323', monospace;
+  font-size: 12px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  z-index: 10;
+  border-radius: 2px;
+  font-weight: bold;
+  animation: logJumpPulse 1.4s ease-out infinite;
+  box-shadow: 0 0 8px rgba(3, 179, 82, 0.6);
+}
+.log-jump:hover {
+  background: #04d160;
+  animation: none;
+}
+@keyframes logJumpPulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(3, 179, 82, 0.4); }
+  50%      { box-shadow: 0 0 14px rgba(3, 179, 82, 0.9); }
+}
+
+/* ──────────────────────────────────────
+   미지의 신호 (Unknown Signal) 스타일
+   ────────────────────────────────────── */
+.signal-modal {
+  border-color: #5fb37a;
+}
+.signal-head {
+  background: #1a3d28;
+  color: #e8f5ec;
+}
+
+.signal-item.clickable:hover {
+  background: #1a3d28 !important;
+  border-color: #03B352 !important;
+}
+
+@keyframes signalPulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(232, 168, 83, 0.3); }
+  50%      { box-shadow: 0 0 12px rgba(232, 168, 83, 0.7); }
+}
+
 .pet-art { position: relative; }
 .pet-art:hover {
   filter: brightness(1.15);

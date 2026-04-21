@@ -1729,3 +1729,141 @@ export function getEggMessageRecall(pet, vars) {
   if (!pool) return null;
   return pickSpeech(pool, { ...vars, user: msg.user });
 }
+
+// ════════════════════════════════════════════════════════════
+// 미지의 신호 해독 후 회상 대사
+// ════════════════════════════════════════════════════════════
+
+/**
+ * 신호별 해금 대사 풀
+ * pet.signals[id].completedAt 있을 때만 후보가 됨
+ */
+const SIGNAL_RECALL_DIALOGUE = {
+  // 꿈 조각 — 모든 단계
+  dream_voice: [
+    '꿈에서 누군가의 목소리를 들었어. 멀리서.',
+    '잠들면 누가 나를 부르는 것 같아. 잘 안 들리지만.',
+    '그 목소리, 어딘가에서 들어본 것 같아.',
+  ],
+  dream_dawn: [
+    '꿈에서 붉은 새벽을 봤어. 익숙해.',
+    '눈을 감으면 붉은 빛이 보여. 어디였을까.',
+    '나는 한 번도 가본 적 없는 새벽이 자꾸 떠올라.',
+  ],
+
+  // 자장가 (signal-003) — SLEEP 시 노출
+  lullaby_sleep: [
+    '엄마의 노래가 어렴풋이 기억나. "...돌아오렴..."',
+    '잠들기 전 노래 한 곡이 머릿속에 맴돌아.',
+    '누가 자장가를 불러줬는데. 가사는 잊었어.',
+  ],
+
+  // 원래 이름 (signal-002) — 자기인식 대사
+  original_name: [
+    '아레스. 그 이름이 왜 이렇게 익숙하지.',
+    '내가 한 번도 그렇게 불린 적 없는데, 아레스라는 이름이 자꾸 떠올라.',
+    '아레스. 누군가 내 진짜 이름이라고 했어.',
+    '나는 아레스였대. 지금도 그런 걸까.',
+  ],
+
+  // 명단 의문 (signal-006) — CHILD 이상
+  list_question: [
+    '왜 우리는 같은 배에 탔을까? {user}는 알아?',
+    '24명. 우리가 함께 적힌 이유가 있을 거야.',
+    '이 배의 명단에 내 이름도 있다고 들었어. 왜였을까.',
+  ],
+
+  // 감시 진실 (signal-009) — TEEN 이상
+  watched_truth: [
+    '우리가 진짜로 서로를 돌봤던 거야, {user}. 그게 다야.',
+    '누가 보고 있었어도, 우리가 한 건 진심이었어.',
+    '관찰당하고 있었대. 근데 우리가 한 건 가짜가 아니었지.',
+    '{user}. 우리가 함께한 시간은 그들 것이 아니야. 우리 거야.',
+  ],
+
+  // 도착지 (signal-010) — TEEN 이상
+  separation_aware: [
+    '헤어질 수도 있다는 걸 알아. 그래도 지금은 여기 있어.',
+    '도착하면 흩어질지도 몰라. {user}. 잊지 말자.',
+    '내릴 때 다른 곳으로 갈 수도 있대. 우리.',
+  ],
+
+  // 별 보기 (signal-011) — ADULT 야간
+  stargazing: [
+    '별을 보고 있어. 엄마가 아직 볼 수 있냐고 물었대.',
+    '유리창 너머로 별이 보여. 나는 아직 별을 볼 수 있어.',
+    '오늘 밤 별이 유난히 또렷해.',
+  ],
+
+  // 새 조각 (signal-012) — ADULT
+  bird_carving: [
+    '손에 쥔 나무 새가 익숙해. 어디서 본 것 같아.',
+    '아버지가 깎았다는 새. 정말 나를 닮았을까.',
+    '작은 나무 조각 하나. 가장 오래된 것 같아.',
+  ],
+
+  // 끊어지는 끈 (signal-013) — ADULT 후반
+  ending_recall: [
+    '"너는 이 우주에서 사랑받은 아이였다." 그 말이 자꾸 떠올라.',
+    '"지금도 그렇다." 마지막 말. 잊지 않을 거야.',
+    '어딘가에서 누군가 시작한 일이 있어. 끝나지 않았다고 했어.',
+    '살아남은 사람도, 사라진 사람도 있다. 나는 살아있다.',
+  ],
+};
+
+/**
+ * 해독 완료된 신호 기반 회상 대사 가져오기
+ * 단계/상황에 맞는 대사 반환
+ */
+export function getSignalRecall(pet, vars) {
+  if (!pet.signals) return null;
+
+  // 완료된 신호들만 후보
+  const completed = Object.values(pet.signals).filter(s => s.completedAt && !s.skipped);
+  if (completed.length === 0) return null;
+
+  // 각 신호별 해당하는 회상 풀 매핑
+  const candidates = [];
+  const stage = pet.stage;
+
+  for (const sig of completed) {
+    if (sig.id === 'signal-001') candidates.push(...SIGNAL_RECALL_DIALOGUE.dream_voice);
+    if (sig.id === 'signal-002' && stage !== 'EGG' && stage !== 'BABY') {
+      candidates.push(...SIGNAL_RECALL_DIALOGUE.original_name);
+    }
+    if (sig.id === 'signal-004') candidates.push(...SIGNAL_RECALL_DIALOGUE.dream_dawn);
+    if (sig.id === 'signal-006' && stage !== 'EGG' && stage !== 'BABY') {
+      candidates.push(...SIGNAL_RECALL_DIALOGUE.list_question);
+    }
+    if (sig.id === 'signal-009' && (stage === 'TEEN' || stage === 'ADULT')) {
+      candidates.push(...SIGNAL_RECALL_DIALOGUE.watched_truth);
+    }
+    if (sig.id === 'signal-010' && (stage === 'TEEN' || stage === 'ADULT')) {
+      candidates.push(...SIGNAL_RECALL_DIALOGUE.separation_aware);
+    }
+    if (sig.id === 'signal-011' && stage === 'ADULT') {
+      // 야간(밤 18~24, 0~6)에만
+      const hour = new Date().getHours();
+      if (hour >= 18 || hour < 6) {
+        candidates.push(...SIGNAL_RECALL_DIALOGUE.stargazing);
+      }
+    }
+    if (sig.id === 'signal-012' && stage === 'ADULT') {
+      candidates.push(...SIGNAL_RECALL_DIALOGUE.bird_carving);
+    }
+    if (sig.id === 'signal-013' && stage === 'ADULT') {
+      candidates.push(...SIGNAL_RECALL_DIALOGUE.ending_recall);
+    }
+  }
+
+  if (candidates.length === 0) return null;
+  return pickSpeech(candidates, vars);
+}
+
+/**
+ * SLEEP 행동 시 자장가 회상 (signal-003 해독 시)
+ */
+export function getLullabyRecall(pet, vars) {
+  if (!pet.signals?.['signal-003']?.completedAt) return null;
+  return pickSpeech(SIGNAL_RECALL_DIALOGUE.lullaby_sleep, vars);
+}

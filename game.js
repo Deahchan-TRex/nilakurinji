@@ -341,3 +341,237 @@ export function getEggNarrativeIndex(pet) {
 }
 
 export { EGG_NARRATIVES, STAGE_NARRATIVES };
+
+// ════════════════════════════════════════════════════════════
+// 미지의 신호 (Unknown Signal) 시스템
+// ════════════════════════════════════════════════════════════
+
+/**
+ * 현재 발사되어야 할 신호 탐색
+ * triggerHour 이후 + 아직 생성되지 않은 신호를 반환
+ */
+export function checkSignalSpawn(pet) {
+  if (pet.isDead) return null;
+  const hoursLived = (Date.now() - pet.bornAt) / 3600000;
+  const signals = pet.signals || {};
+
+  // triggerHour 순서대로 정렬하고 첫 번째 미발사 신호 체크
+  const candidates = (CONFIG.SIGNALS || [])
+    .filter(s => !signals[s.id] && hoursLived >= s.triggerHour)
+    .sort((a, b) => a.triggerHour - b.triggerHour);
+
+  if (candidates.length === 0) return null;
+  // 한 번에 하나씩만 발사
+  return candidates[0];
+}
+
+/**
+ * 신호 발사 (생성)
+ */
+export function spawnSignal(pet, signalDef) {
+  pet.signals = pet.signals || {};
+  pet.signals[signalDef.id] = {
+    id: signalDef.id,
+    spawnedAt: Date.now(),
+    stage: 0,             // 0 = 미개봉, 1+ = 해독 단계
+    decodedBy: [],
+    lastActionAt: Date.now(),
+  };
+  return pet;
+}
+
+/**
+ * 자동 소멸 체크 (24시간 내 미개봉)
+ */
+export function expireOldSignals(pet) {
+  if (!pet.signals) return pet;
+  const now = Date.now();
+  const expireMs = (CONFIG.SIGNAL_CONFIG?.EXPIRE_HOURS || 24) * 3600 * 1000;
+  for (const sigId of Object.keys(pet.signals)) {
+    const s = pet.signals[sigId];
+    if (s.stage === 0 && (now - s.spawnedAt) > expireMs && !s.expired) {
+      s.expired = true;
+      s.expiredAt = now;
+    }
+  }
+  return pet;
+}
+
+/**
+ * 해독 시도
+ * @returns { ok, reason?, penalty?, reward?, completed? }
+ */
+export function decodeSignal(pet, signalId, userName) {
+  if (pet.isDead) return { ok: false, reason: 'dead' };
+  const sigDef = CONFIG.SIGNALS.find(s => s.id === signalId);
+  if (!sigDef) return { ok: false, reason: 'unknown' };
+  const sig = pet.signals?.[signalId];
+  if (!sig) return { ok: false, reason: 'not_spawned' };
+  if (sig.expired) return { ok: false, reason: 'expired' };
+
+  const cfg = CONFIG.SIGNAL_CONFIG;
+  const maxStage = Object.keys(sigDef.stages).length;
+  if (sig.stage >= maxStage) return { ok: false, reason: 'already_complete' };
+
+  // 에너지 비용 계산
+  const nextStage = sig.stage + 1;
+  let cost = 0;
+  if (sig.stage === 0) cost = sigDef.costs.open || 20;
+  else if (sig.stage === 1) cost = sigDef.costs.decode1 || sigDef.costs.decode || 25;
+  else if (sig.stage === 2) cost = sigDef.costs.decode2 || 25;
+
+  // 에너지 부족 체크
+  if (pet.energy < cfg.CRITICAL_ENERGY_THRESHOLD && sigDef.tier === 3) {
+    return { ok: false, reason: 'critical_energy' };
+  }
+  const isLowEnergy = pet.energy < cfg.LOW_ENERGY_THRESHOLD;
+
+  // 피로 체크 (24시간 내 몇 번 해독했는지)
+  pet.decodeFatigue = pet.decodeFatigue || {};
+  const fatigue = pet.decodeFatigue[userName];
+  if (fatigue && fatigue.count >= cfg.FATIGUE_THRESHOLD) {
+    const elapsed = Date.now() - fatigue.startAt;
+    if (elapsed < cfg.FATIGUE_HOURS * 3600 * 1000) {
+      return { ok: false, reason: 'fatigued' };
+    } else {
+      // 피로 해제
+      delete pet.decodeFatigue[userName];
+    }
+  }
+
+  // 에너지 소모
+  pet.energy = Math.max(0, pet.energy - cost);
+
+  // 페널티 적용 (에너지 부족)
+  let penalty = null;
+  if (isLowEnergy) {
+    const p = cfg.PENALTY_LOW_ENERGY;
+    pet.happy = Math.max(0, pet.happy + (p.happy || 0));
+    pet.hygiene = Math.max(0, pet.hygiene + (p.hygiene || 0));
+    penalty = p;
+  }
+
+  // 상태 갱신
+  sig.stage = nextStage;
+  sig.lastActionAt = Date.now();
+  if (!sig.decodedBy.includes(userName)) {
+    sig.decodedBy.push(userName);
+  }
+
+  // 피로 누적
+  if (!pet.decodeFatigue[userName]) {
+    pet.decodeFatigue[userName] = { count: 1, startAt: Date.now() };
+  } else {
+    pet.decodeFatigue[userName].count++;
+  }
+
+  // 완전 해독 보상 적용
+  let reward = null;
+  const completed = nextStage >= maxStage;
+  if (completed) {
+    sig.completedAt = Date.now();
+    reward = applySignalReward(pet, sigDef);
+  }
+
+  return { ok: true, cost, penalty, reward, completed, stage: nextStage };
+}
+
+/**
+ * 완전 해독 시 보상 적용
+ */
+function applySignalReward(pet, sigDef) {
+  const r = {};
+
+  // 성격 영향
+  if (sigDef.personality) {
+    pet.personality = pet.personality || {};
+    for (const [k, v] of Object.entries(sigDef.personality)) {
+      pet.personality[k] = (pet.personality[k] || 0) + v;
+    }
+    r.personality = sigDef.personality;
+  }
+
+  // 꿈 조각
+  if (sigDef.dream) {
+    pet.dreamFragments = pet.dreamFragments || [];
+    pet.dreamFragments.push({ text: sigDef.dream, from: sigDef.id });
+    r.dream = sigDef.dream;
+  }
+
+  // 원래 이름
+  if (sigDef.originalName) {
+    pet.originalName = sigDef.originalName;
+    r.originalName = sigDef.originalName;
+  }
+
+  // 아카이브 아이템
+  if (sigDef.archive) {
+    pet.archiveItems = pet.archiveItems || [];
+    pet.archiveItems.push({ name: sigDef.archive, from: sigDef.id });
+    r.archive = sigDef.archive;
+  }
+
+  // 버프
+  if (sigDef.buff) {
+    pet.activeBuffs = pet.activeBuffs || [];
+    pet.activeBuffs.push({
+      type: sigDef.buff.type,
+      value: sigDef.buff.value,
+      until: Date.now() + sigDef.buff.duration,
+      from: sigDef.id,
+    });
+    r.buff = sigDef.buff;
+  }
+
+  return r;
+}
+
+/**
+ * 신호 상세 정보 반환 (UI 표시용)
+ */
+export function getSignalInfo(pet, signalId) {
+  const sigDef = CONFIG.SIGNALS.find(s => s.id === signalId);
+  if (!sigDef) return null;
+  const sig = pet.signals?.[signalId];
+  if (!sig) return null;
+
+  const maxStage = Object.keys(sigDef.stages).length;
+  const currentStage = sig.stage;
+  const nextStage = currentStage + 1;
+
+  // 현재 보여질 텍스트
+  const text = currentStage === 0 ? null : sigDef.stages[currentStage];
+  const percent = currentStage === 0 ? 0 : sigDef.percents[currentStage];
+
+  // 다음 단계 비용
+  let nextCost = 0;
+  if (currentStage === 0) nextCost = sigDef.costs.open || 20;
+  else if (currentStage === 1) nextCost = sigDef.costs.decode1 || sigDef.costs.decode || 25;
+  else if (currentStage === 2) nextCost = sigDef.costs.decode2 || 25;
+
+  return {
+    def: sigDef,
+    state: sig,
+    text,
+    percent,
+    currentStage,
+    maxStage,
+    canDecode: currentStage < maxStage && !sig.expired,
+    nextCost,
+    isComplete: currentStage >= maxStage,
+  };
+}
+
+/**
+ * 놓쳤거나 활성 신호 목록
+ */
+export function listActiveSignals(pet) {
+  if (!pet.signals) return [];
+  return Object.values(pet.signals)
+    .map(s => {
+      const def = CONFIG.SIGNALS.find(d => d.id === s.id);
+      return def ? { ...s, def } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.spawnedAt - a.spawnedAt);
+}

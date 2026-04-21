@@ -5,7 +5,7 @@
 export const CONFIG = {
   // ── 앱 버전 (배포마다 올림) ───────────────────────────
   // 이 값이 바뀌면 모든 접속자가 자동 새로고침됨
-  APP_VERSION: '2026.04.20.2',
+  APP_VERSION: '2026.04.21.1',
 
   // ── 캐릭터 기본 ───────────────────────────────────────
   PET_NAME: 'MARS II',
@@ -174,6 +174,114 @@ export const CONFIG = {
 
   // ── 사망/부활 ─────────────────────────────────────────
   MAX_REVIVES: 3,
+
+  // ── 미지의 신호 설정 ──────────────────────────────────
+  SIGNAL_CONFIG: {
+    EXPIRE_HOURS: 24,
+    LOW_ENERGY_THRESHOLD: 25,
+    CRITICAL_ENERGY_THRESHOLD: 10,
+    PENALTY_LOW_ENERGY: { happy: -20, hygiene: -10 },
+    FATIGUE_THRESHOLD: 3,
+    FATIGUE_HOURS: 12,
+  },
+
+  // ── 미지의 신호: 12개 단서 + FINALE ───────────────────
+  SIGNALS: [
+    { id: 'signal-001', tier: 1, triggerHour: 42, name: '빗방울',
+      stages: { 1: '"......아직 거기 있니? ......나는 여기에 있어."' },
+      percents: { 1: 100 }, costs: { open: 20 },
+      personality: { socialVsIntro: +2 },
+      reward: '꿈 조각 "누군가의 목소리" 추가', dream: '누군가의 목소리' },
+    { id: 'signal-002', tier: 2, triggerHour: 56, name: '이름의 그림자',
+      stages: {
+        1: '"...네 █를 █른 사람이 있었다. █레스..."',
+        2: '"네 이름을 부른 사람이 있었다. 아레스.\n그게 우리가 너에게 처음 지어준 이름이야."',
+      },
+      percents: { 1: 40, 2: 100 }, costs: { open: 20, decode: 25 },
+      personality: { greedVsTemperance: -3 },
+      reward: '원래 이름 "아레스" 해금', originalName: '아레스' },
+    { id: 'signal-003', tier: 1, triggerHour: 92, name: '자장가',
+      stages: { 1: '"♪ ...붉은 언덕 너머로 / 아기 별이 잠드네 / 돌아오렴 ...돌아오렴... ♪\n(노랫소리가 끊기며 잡음으로 사라진다.)"' },
+      percents: { 1: 100 }, costs: { open: 20 },
+      personality: { activeVsCalm: -2 },
+      reward: '수면 시 "엄마의 자장가" 대사 해금' },
+    { id: 'signal-004', tier: 2, triggerHour: 108, name: '화성의 아침',
+      stages: {
+        1: '"...새벽이 █다. █리된 기 █ ██로 퍼지는..."',
+        2: '"새벽이 온다. 분리된 기지 위로 퍼지는 붉은 빛.\n우리가 너를 본 마지막 풍경이었다.\n— AB-1 Ares Base One, 2026.03.14"',
+      },
+      percents: { 1: 50, 2: 100 }, costs: { open: 20, decode: 25 },
+      personality: { activeVsCalm: -3 },
+      reward: '꿈 조각 "붉은 새벽" 추가', dream: '붉은 새벽' },
+    { id: 'signal-005', tier: 1, triggerHour: 128, name: '생일',
+      stages: { 1: '"오늘이 네 생일이라는 걸 알아.\n우리는 여기서도 촛불을 켰다. 들리니?"' },
+      percents: { 1: 100 }, costs: { open: 20 },
+      personality: { socialVsIntro: +3 },
+      reward: '24시간 happy +5 보너스',
+      buff: { type: 'happy_bonus', duration: 24 * 3600 * 1000, value: 5 } },
+    { id: 'signal-006', tier: 2, triggerHour: 150, name: '흘려본 이름',
+      stages: {
+        1: '"...이 █지에 █■■■■ 기록되어 있다. 24명의 █■ █록..."',
+        2: '"이 배에 특별 명단이 기록되어 있다. 24명의 이름 목록.\n선원 명부와는 다른 종이에, 다른 이유로 적혔다.\n그게 무슨 의미인지는 네가 더 자랄 때 알게 될 거야."',
+      },
+      percents: { 1: 45, 2: 100 }, costs: { open: 20, decode: 25 },
+      personality: { greedVsTemperance: -3 },
+      reward: '"왜 우리는 같은 배에 탔을까?" 대사 해금' },
+    { id: 'signal-007', tier: 1, triggerHour: 168, name: '흔적',
+      stages: { 1: '"네 아버지가 남긴 흔적을 찾았다.\n책상 위 작은 돌 하나. 붉은 모래로 된.\n너한테 주고 싶어 했대."' },
+      percents: { 1: 100 }, costs: { open: 20 },
+      personality: { activeVsCalm: -2 },
+      reward: '아카이브 "아버지의 돌" 수집 +1', archive: '아버지의 돌' },
+    { id: 'signal-008', tier: 1, triggerHour: 190, name: '아버지의 기록',
+      stages: { 1: '"2026.02.28 — 아들과 마지막으로 본 날.\n2026.03.01 — 선착장에서 잠시 울었다.\n2026.03.14 — 네 배가 떠났다. 나는 공항에서 하루 종일 서 있었다."' },
+      percents: { 1: 100 }, costs: { open: 20 },
+      personality: { activeVsCalm: -4 },
+      reward: '아카이브 "아버지의 일기" 추가', archive: '아버지의 일기' },
+    { id: 'signal-009', tier: 3, triggerHour: 210, name: '이름의 의미',
+      stages: {
+        1: '"...24명의 █단. █ █록의 █미는..."',
+        2: '"24명의 명단. 그 기록의 의미는\n██■■■ 감시 프로그램이다..."',
+        3: '"24명의 명단. 그 기록의 의미는 감시 프로그램이다.\n칼라릴리호는 수송선이 아니야.\n너도, 너를 돌보는 이들도, 모두 관찰되고 있다.\n하지만 그들이 모르는 게 하나 있어.\n너희가 서로를 진짜로 돌보고 있다는 것."',
+      },
+      percents: { 1: 25, 2: 55, 3: 100 }, costs: { open: 25, decode1: 25, decode2: 25 },
+      personality: { greedVsTemperance: -5, diligentVsFree: +3 },
+      reward: '"우리가 서로를 진짜 돌봤던 거야" 대사 해금', majorEvent: true },
+    { id: 'signal-010', tier: 2, triggerHour: 240, name: '도착지',
+      stages: {
+        1: '"...배가 █착할 █이다. █ █■ 예정된 곳이 아니 █..."',
+        2: '"배가 도착할 곳이다. 원래 예정된 곳이 아니다.\n프로키시마 b가 아니라, 시민 재분류 구역.\n내릴 때 각자 다른 곳으로 가게 될지도 몰라. 마음의 준비를."',
+      },
+      percents: { 1: 50, 2: 100 }, costs: { open: 20, decode: 25 },
+      personality: { socialVsIntro: -3 },
+      reward: '"헤어질 수도 있다는 걸 알아" 대사 해금' },
+    { id: 'signal-011', tier: 1, triggerHour: 276, name: '네가 본 별',
+      stages: { 1: '"엄마가 묻더라. 네가 아직 별을 볼 수 있냐고.\n유리창이 있는 방이면 좋겠다고."' },
+      percents: { 1: 100 }, costs: { open: 20 },
+      personality: { activeVsCalm: -2 },
+      reward: '야간 "별을 보고 있어" 대사 빈도 증가' },
+    { id: 'signal-012', tier: 2, triggerHour: 296, name: '선물',
+      stages: {
+        1: '"...크리스█스가 다 █왔다. 선█을 █다. 전█기가 막히기 █에..."',
+        2: '"크리스마스가 다가왔다. 선물을 보냈다. 전달기가 막히기 전에.\n네 방 어딘가에 작은 나무 조각이 있을 거야.\n아버지가 깎은 새. 너를 닮았대."',
+      },
+      percents: { 1: 55, 2: 100 }, costs: { open: 20, decode: 25 },
+      personality: { socialVsIntro: +3 },
+      reward: '아카이브 "새 조각" 추가', archive: '새 조각' },
+    { id: 'signal-013', tier: 3, triggerHour: 318, name: '끊어지는 끈',
+      stages: {
+        1: '"...█신이 █어진다. █부터는 █락 █을 거 █..."',
+        2: '"통신이 끊어진다. 이제부터는 연락 못 할 거야.\n여기서 █■■ 시작됐다. █■■ 끝나지 않았어..."',
+        3: '"통신이 끊어진다. 이제부터는 연락 못 할 거야.\n여기서 뭔가가 시작됐다. 아직 끝나지 않았어.\n살아남은 사람도, 사라진 사람도 있어.\n확실한 건 네가 살아있다는 것뿐.\n아레스. 너는 이 우주에서 사랑받은 아이였다.\n지금도 그렇다."',
+      },
+      percents: { 1: 20, 2: 50, 3: 100 }, costs: { open: 25, decode1: 25, decode2: 25 },
+      personality: { diligentVsFree: +5, greedVsTemperance: -4 },
+      reward: 'ADULT 유휴 대사에 회상 삽입', majorEvent: true },
+    { id: 'signal-014', tier: 3, triggerHour: 330, name: '마지막 답장',
+      stages: { 1: '[FINALE: 답장 발신 UI]' },
+      percents: { 1: 100 }, costs: { open: 0 },
+      personality: { socialVsIntro: +5 },
+      reward: '이벤트 종결 · 크루 편지 아카이브 영구 보존', isFinale: true },
+  ],
 
   // ── Firebase 설정 ────────────────────────────────────
   FIREBASE: {
