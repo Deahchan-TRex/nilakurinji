@@ -67,6 +67,22 @@ export function defaultPet() {
     // EGG 상태에서 크루가 남긴 메시지 { user, text, at }[] — 부화 후 회상용
     eggMessages: [],
 
+    // 미지의 신호 관련
+    // signals[signalId] = { spawnedAt, stage, decoded, decodedBy: [크루이름], expiredAt? }
+    signals: {},
+    // 예약된 발사 [{signalId, fireAt, scheduledBy}]
+    scheduledSignals: [],
+    // 신호로 쌓인 꿈 조각 [{text, from: 'signal-XXX'}]
+    dreamFragments: [],
+    // 수집한 아카이브 아이템 [{name, from}]
+    archiveItems: [],
+    // 해독 피로 상태 { userName: { count, startAt } }
+    decodeFatigue: {},
+    // FINALE 답장 수집 { userName: 'text' }
+    finaleReplies: {},
+    // 현재 활성 버프 [{type, until, value}]
+    activeBuffs: [],
+
     // 공용 마지막 대사 (누가 봐도 보이는 것 - 진화 순간 등)
     lastSpeech: null,
     // 유저별 개인 대사: { [userName]: { text, at, to } }
