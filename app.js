@@ -1060,6 +1060,15 @@ function render() {
       text: `✦ ${stageResult.from} → ${stageResult.to}`,
       type: 'epic',
     });
+
+    // CHILD 진화 시 미니게임 해금 안내 (전 크루에게)
+    if (stageResult.to === 'CHILD') {
+      Backend.addLog({
+        user: null, action: 'SYSTEM',
+        text: `◆ 새 놀이 해금: [G] 메뉴에서 블랙잭과 틱택토가 열렸습니다`,
+        type: 'epic',
+      });
+    }
   }
 }
 
@@ -4118,10 +4127,12 @@ function showMinigameHub() {
   if (existing) { existing.remove(); return; }
 
   const stage = currentPet.stage;
-  const unlocked = (stage === 'CHILD' || stage === 'TEEN' || stage === 'ADULT');
+  const stageUnlocked = (stage === 'CHILD' || stage === 'TEEN' || stage === 'ADULT');
+  // 관리자 + 테스트 모드: 단계 무시하고 모두 언락
+  const unlocked = stageUnlocked || (currentUser.isAdmin && minigameTestMode);
 
   // BABY는 바로 Up/Down 실행 (기존 동작 유지)
-  if (!unlocked && !currentUser.isAdmin) {
+  if (!stageUnlocked && !currentUser.isAdmin) {
     showUpDownGame();
     return;
   }
@@ -4152,6 +4163,10 @@ function showMinigameHub() {
 
       <div style="color:#8fb39a;font-size:11px;margin-bottom:12px;">
         MARS II가 함께 놀고 싶어해. 어떤 놀이?
+        ${isAdmin && !stageUnlocked ? (minigameTestMode
+          ? '<br><span style="color:#e8a853;font-size:10px;">(현재 ' + stage + ' 단계지만 테스트 모드로 전체 게임 열림)</span>'
+          : '<br><span style="color:#666;font-size:10px;">(현재 ' + stage + ' 단계 · 테스트 모드를 켜면 블랙잭/틱택토도 열림)</span>'
+        ) : ''}
       </div>
 
       <div style="display:flex;flex-direction:column;gap:8px;">
@@ -5034,6 +5049,7 @@ async function startGame() {
   console.log('[session] 시작 시각:', new Date(mySessionStartAt).toLocaleTimeString());
 
   Backend.onPetChange(pet => {
+    const prevStage = currentPet?.stage;
     currentPet = pet;
 
     // 강제 새로고침 감지: pet.forceRefreshAt이 내 세션 시작 이후여야만 반응
@@ -5049,6 +5065,15 @@ async function startGame() {
     if (pet.stopTimers === true) {
       console.warn('[killswitch] ⚠ 관리자 킬스위치 활성화 - 타이머 모두 중단');
       stopAllTimers();
+    }
+
+    // 단계 변화 시 열려있는 미니게임 허브 자동 갱신 (CHILD 진화 대응)
+    if (prevStage && prevStage !== pet.stage) {
+      const hubOpen = document.getElementById('minigame-hub-modal');
+      if (hubOpen) {
+        hubOpen.remove();
+        setTimeout(showMinigameHub, 100);
+      }
     }
 
     render();
