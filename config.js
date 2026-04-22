@@ -5,7 +5,7 @@
 export const CONFIG = {
   // ── 앱 버전 (배포마다 올림) ───────────────────────────
   // 이 값이 바뀌면 모든 접속자가 자동 새로고침됨
-  APP_VERSION: '2026.04.22.2',
+  APP_VERSION: '2026.04.22.4',
 
   // ── 캐릭터 기본 ───────────────────────────────────────
   PET_NAME: 'MARS II',
@@ -79,27 +79,37 @@ export const CONFIG = {
     ],
     BABY: [
       { key: 'milk',      label: '보급 영양식',      override: { hunger: 22, happy: 8 } },
-      { key: 'paste',     label: '영양 페이스트',    override: { hunger: 20, happy: 4 } },
+      { key: 'paste',     label: '영양 페이스트',    override: { hunger: 20, happy: 4,
+                           personality: { greedVsTemperance: -2 } } },
       { key: 'porridge',  label: '따뜻한 죽',        override: { hunger: 18, happy: 10 } },
-      { key: 'candy',     label: '달콤한 알약',      override: { hunger: 10, happy: 14, hygiene: -3 } },
+      { key: 'candy',     label: '달콤한 알약',      override: { hunger: 10, happy: 14, hygiene: -3,
+                           personality: { greedVsTemperance: +2 } } },
     ],
     CHILD: [
       { key: 'bread',     label: '따뜻한 빵',        override: { hunger: 22, happy: 5 } },
       { key: 'soup',      label: '뜨끈한 수프',      override: { hunger: 18, happy: 6, hygiene: -1 } },
-      { key: 'fruit',     label: '붉은 과일',        override: { hunger: 15, happy: 8 } },
-      { key: 'sweet',     label: '단 것',            override: { hunger: 12, happy: 12, hygiene: -4 } },
+      { key: 'fruit',     label: '붉은 과일',        override: { hunger: 15, happy: 8,
+                           personality: { greedVsTemperance: -2 } } },
+      { key: 'sweet',     label: '단 것',            override: { hunger: 12, happy: 12, hygiene: -4,
+                           personality: { greedVsTemperance: +2 } } },
     ],
     TEEN: [
-      { key: 'ration',    label: '규정 배급식',      override: { hunger: 20, happy: 3 } },
+      { key: 'ration',    label: '규정 배급식',      override: { hunger: 20, happy: 3,
+                           personality: { greedVsTemperance: -3, diligentVsFree: +1 } } },
       { key: 'stew',      label: '고기 스튜',        override: { hunger: 25, happy: 5 } },
-      { key: 'premium',   label: '특별 메뉴',        override: { hunger: 20, happy: 15, hygiene: -2 } },
-      { key: 'stolen',    label: '몰래 빼온 것',     override: { hunger: 15, happy: 18 } },
+      { key: 'premium',   label: '특별 메뉴',        override: { hunger: 20, happy: 15, hygiene: -2,
+                           personality: { greedVsTemperance: +3 } } },
+      { key: 'stolen',    label: '몰래 빼온 것',     override: { hunger: 15, happy: 18,
+                           personality: { greedVsTemperance: +2, diligentVsFree: -3 } } },
     ],
     ADULT: [
       { key: 'last',      label: '마지막 정찬',      override: { hunger: 30, happy: 10 } },
-      { key: 'shared',    label: '나눠 먹기',        override: { hunger: 18, happy: 18 } },
-      { key: 'bitter',    label: '쓴 차',            override: { hunger: 10, happy: 8 } },
-      { key: 'sugar',     label: '달콤한 선물',      override: { hunger: 15, happy: 20, hygiene: -3 } },
+      { key: 'shared',    label: '나눠 먹기',        override: { hunger: 18, happy: 18,
+                           personality: { socialVsIntro: +2, greedVsTemperance: -2 } } },
+      { key: 'bitter',    label: '쓴 차',            override: { hunger: 10, happy: 8,
+                           personality: { greedVsTemperance: -3, activeVsCalm: -2 } } },
+      { key: 'sugar',     label: '달콤한 선물',      override: { hunger: 15, happy: 20, hygiene: -3,
+                           personality: { greedVsTemperance: +3 } } },
     ],
   },
 
@@ -117,31 +127,41 @@ export const CONFIG = {
       { key: 'hum',       label: '콧노래 불러주기',  override: { happy: 18, energy: -4, hunger: -2 } },
       { key: 'caress',    label: '알 쓰다듬기',      override: { happy: 22, energy: -3, hunger: -1 } },
       { key: 'rock',      label: '흔들어 주기',      override: { happy: 15, energy: -6, hunger: -3 } },
-      { key: 'watch',     label: '조용히 지켜보기',  override: { happy: 10, energy: -1 } },
+      { key: 'watch',     label: '조용히 지켜보기',  override: { happy: 10, energy: -1,
+                           personality: { activeVsCalm: -2, socialVsIntro: -1 } } },
     ],
     BABY: [
       { key: 'peekaboo',  label: '까꿍 놀이',        override: { happy: 22, energy: -8, hunger: -3 } },
       { key: 'rattle',    label: '장난감 흔들기',    override: { happy: 18, energy: -6, hunger: -2 } },
-      { key: 'lullaby',   label: '자장가 불러주기',  override: { happy: 15, energy: -3 } },
+      { key: 'lullaby',   label: '자장가 불러주기',  override: { happy: 15, energy: -3,
+                           personality: { activeVsCalm: -3 } } },
       { key: 'tickle',    label: '간지럽히기',       override: { happy: 20, energy: -10, hunger: -4 } },
     ],
     CHILD: [
       { key: 'chase',     label: '술래잡기',         override: { happy: 22, energy: -15, hunger: -5 } },
-      { key: 'story',     label: '이야기하기',       override: { happy: 18, energy: -5, hunger: -2 } },
+      { key: 'story',     label: '이야기하기',       override: { happy: 18, energy: -5, hunger: -2,
+                           personality: { activeVsCalm: -1, socialVsIntro: +1 } } },
       { key: 'hide',      label: '숨바꼭질',         override: { happy: 20, energy: -10, hunger: -3 } },
-      { key: 'draw',      label: '그림 그리기',      override: { happy: 16, energy: -6, hunger: -2 } },
+      { key: 'draw',      label: '그림 그리기',      override: { happy: 16, energy: -6, hunger: -2,
+                           personality: { activeVsCalm: -2, socialVsIntro: -1, diligentVsFree: +1 } } },
     ],
     TEEN: [
-      { key: 'talk',      label: '속마음 얘기',      override: { happy: 20, energy: -4, hunger: -2 } },
+      { key: 'talk',      label: '속마음 얘기',      override: { happy: 20, energy: -4, hunger: -2,
+                           personality: { socialVsIntro: +2, activeVsCalm: -1 } } },
       { key: 'spar',      label: '가벼운 겨루기',    override: { happy: 18, energy: -15, hunger: -5 } },
-      { key: 'music',     label: '음악 듣기',        override: { happy: 22, energy: -3 } },
-      { key: 'stargaze',  label: '별 헤기',          override: { happy: 15, energy: -2 } },
+      { key: 'music',     label: '음악 듣기',        override: { happy: 22, energy: -3,
+                           personality: { activeVsCalm: -2, diligentVsFree: -2 } } },
+      { key: 'stargaze',  label: '별 헤기',          override: { happy: 15, energy: -2,
+                           personality: { activeVsCalm: -3, socialVsIntro: -2 } } },
     ],
     ADULT: [
-      { key: 'reminisce', label: '추억 더듬기',      override: { happy: 18, energy: -3, hunger: -1 } },
-      { key: 'silence',   label: '말없이 있기',      override: { happy: 15, energy: -1 } },
+      { key: 'reminisce', label: '추억 더듬기',      override: { happy: 18, energy: -3, hunger: -1,
+                           personality: { activeVsCalm: -2, socialVsIntro: -1 } } },
+      { key: 'silence',   label: '말없이 있기',      override: { happy: 15, energy: -1,
+                           personality: { activeVsCalm: -3, socialVsIntro: -3 } } },
       { key: 'dance',     label: '함께 춤추기',      override: { happy: 25, energy: -12, hunger: -4 } },
-      { key: 'promise',   label: '약속 나누기',      override: { happy: 20, energy: -2 } },
+      { key: 'promise',   label: '약속 나누기',      override: { happy: 20, energy: -2,
+                           personality: { socialVsIntro: +2, diligentVsFree: +1 } } },
     ],
   },
 
@@ -157,9 +177,10 @@ export const CONFIG = {
   PERSONALITY_DELTA: {
     feed:  { greedVsTemperance: +2 },
     play:  { activeVsCalm: +2, socialVsIntro: +1 },
-    sleep: { activeVsCalm: -2 },
+    sleep: { activeVsCalm: -2, socialVsIntro: -1 },
     clean: { greedVsTemperance: -1, diligentVsFree: +1 },
     train: { diligentVsFree: +2, activeVsCalm: +1 },
+    talk:  { socialVsIntro: +1, diligentVsFree: -1 },
   },
 
   // ── 진화 단계 (시간 기준) ─────────────────────────────
@@ -174,6 +195,18 @@ export const CONFIG = {
 
   // ── 사망/부활 ─────────────────────────────────────────
   MAX_REVIVES: 3,
+
+  // ── 미니게임 설정 ─────────────────────────────────────
+  MINIGAME_CONFIG: {
+    // 하루 보상 받을 수 있는 판 수 (그 이후는 대사만)
+    DAILY_REWARD_LIMIT: 3,
+    // Up/Down 설정
+    UPDOWN: {
+      MIN: 1,
+      MAX: 50,
+      MAX_TRIES: 7,      // 기본 시도 횟수
+    },
+  },
 
   // ── 미지의 신호 설정 ──────────────────────────────────
   SIGNAL_CONFIG: {

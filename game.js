@@ -78,7 +78,7 @@ export function applyAction(pet, action, userName = null, override = null) {
   const actualEffect = override ? { ...effect, ...override } : effect;
 
   for (const [key, val] of Object.entries(actualEffect)) {
-    if (['label', 'desc', 'exp'].includes(key)) continue;
+    if (['label', 'desc', 'exp', 'personality'].includes(key)) continue;
     if (pet[key] !== undefined) {
       pet[key] = Math.max(0, Math.min(100, pet[key] + val));
     }
@@ -92,9 +92,16 @@ export function applyAction(pet, action, userName = null, override = null) {
   pet.counters = pet.counters || {};
   pet.counters[action] = (pet.counters[action] || 0) + 1;
 
-  const delta = CONFIG.PERSONALITY_DELTA[action] || {};
+  // 기본 성격 영향
+  const baseDelta = CONFIG.PERSONALITY_DELTA[action] || {};
+  // 서브메뉴 고유 성격 영향 (있으면 기본값에 "더해서" 적용)
+  const submenuDelta = override?.personality || {};
+  const combinedDelta = { ...baseDelta };
+  for (const [axis, d] of Object.entries(submenuDelta)) {
+    combinedDelta[axis] = (combinedDelta[axis] || 0) + d;
+  }
   pet.personality = pet.personality || {};
-  for (const [axis, d] of Object.entries(delta)) {
+  for (const [axis, d] of Object.entries(combinedDelta)) {
     pet.personality[axis] = Math.max(-100, Math.min(100, (pet.personality[axis] || 0) + d));
   }
 

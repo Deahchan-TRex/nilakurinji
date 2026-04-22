@@ -268,6 +268,8 @@ function renderMain() {
     else if (key === 'l') showLore();
     else if (key === 'k') showTalkMenu();
     else if (key === 'n') showSignalList();
+    else if (key === 'g') showUpDownGame();
+    else if (key === 'q') showPendingQuestions();
   });
 }
 
@@ -287,13 +289,14 @@ function renderCommandButtons() {
     <button class="cmd primary" data-act="talk">[K] TALK</button>
   `;
 
-  // 관리자가 아닐 경우: LORE / LOGOUT / HELP / SIGNAL
+  // 관리자가 아닐 경우: SIGNAL / UP-DOWN / PENDING / LORE / LOGOUT
   if (!currentUser.isAdmin) {
     adminCmds.innerHTML = `
-      <button class="cmd" data-act="signal" style="grid-column: span 2;">[N] 📡 SIGNAL</button>
-      <button class="cmd" data-act="lore" style="grid-column: span 2;">[L] LORE</button>
+      <button class="cmd" data-act="signal" style="grid-column: span 2;">[N] SIGNAL</button>
+      <button class="cmd" data-act="minigame" style="grid-column: span 2;">[G] UP/DOWN</button>
+      <button class="cmd" data-act="pending" style="grid-column: span 2;">[Q] 말함</button>
+      <button class="cmd" data-act="lore">[L] LORE</button>
       <button class="cmd" data-act="logout">[X] LOGOUT</button>
-      <button class="cmd" data-act="help">[?] HELP</button>
     `;
   } else {
     // 관리자일 경우: 상단 줄 (핵심 명령)
@@ -334,8 +337,10 @@ function renderCommandButtons() {
     presetBar.innerHTML = `
       <button class="cmd admin" data-act="preset-full">스탯 MAX</button>
       <button class="cmd admin" data-act="preset-low">스탯 LOW</button>
-      <button class="cmd admin" data-act="signal-admin">📡 신호 제어</button>
-      <button class="cmd admin" data-act="finale">⭐ FINALE</button>
+      <button class="cmd admin" data-act="signal-admin">신호 제어</button>
+      <button class="cmd admin" data-act="finale">FINALE</button>
+      <button class="cmd admin" data-act="minigame">UP/DOWN</button>
+      <button class="cmd admin" data-act="pending">말함</button>
       <button class="cmd admin" data-act="forcerefresh">⚡ 전체 새로고침</button>
       <button class="cmd admin" data-act="killswitch">🔒 킬스위치</button>
       <button class="cmd admin" data-act="trimlogs">🧹 LOG 정리</button>
@@ -390,6 +395,8 @@ function renderCommandButtons() {
       else if (act === 'reset') adminReset();
       else if (act === 'signal') showSignalList();
       else if (act === 'signal-admin') showSignalAdminPanel();
+      else if (act === 'minigame') showUpDownGame();
+      else if (act === 'pending') showPendingQuestions();
       else if (act === 'finale') {
         // 이미 봉인된 경우 편지 보기, 아니면 답장 UI
         if (currentPet?.finaleSealed) showSealedLetter();
@@ -448,7 +455,8 @@ function handleCommand(raw) {
 
   // 관리자 전용
   if (!currentUser.isAdmin) {
-    appendSystemLog(`⚠ "${head}": 알 수 없는 명령입니다. help 입력.`, 'warn');
+    // 자유 문장으로 간주하여 펜딩 질문으로 저장
+    savePendingQuestion(raw);
     return;
   }
 
@@ -471,6 +479,33 @@ function handleCommand(raw) {
   if (head === 'kill' || head === 'killswitch') return adminKillSwitch();
 
   appendSystemLog(`⚠ "${head}": 알 수 없는 명령입니다. help 입력.`, 'warn');
+}
+
+/**
+ * 크루가 CMD로 명령어 대신 자유 문장을 입력한 경우
+ * → 펜딩 질문으로 저장해서 나중에 다른 크루가 답할 수 있게
+ */
+async function savePendingQuestion(raw) {
+  if (!currentPet || currentPet.isDead) return;
+  if (!raw || raw.trim().length < 2) return;
+
+  currentPet.pendingQuestions = currentPet.pendingQuestions || [];
+  currentPet.pendingQuestions.push({
+    user: currentUser.name,
+    text: raw.trim().slice(0, 120),  // 최대 120자
+    at: Date.now(),
+    answered: false,
+    answer: null,
+    answerBy: null,
+    answerAt: null,
+  });
+  // 최대 50개 유지 (오래된 것 삭제)
+  if (currentPet.pendingQuestions.length > 50) {
+    currentPet.pendingQuestions = currentPet.pendingQuestions.slice(-50);
+  }
+
+  await Backend.savePet(currentPet);
+  appendSystemLog(`◎ 질문이 기록되었어. 언젠가 답이 돌아올지도 몰라.`, 'personality');
 }
 
 // ────────────────────────────────────────────────────────────
@@ -503,6 +538,7 @@ function showActionSubmenu(action) {
   const modal = document.createElement('div');
   modal.id = 'submenu-modal';
   modal.className = 'talk-modal';
+
   modal.innerHTML = `
     <div class="talk-modal-head">
       <span>▶ ${titles[action]}</span>
@@ -1272,7 +1308,7 @@ function handlePetTap() {
   if (now - lastTapAt < 1000) return;
   lastTapAt = now;
 
-  // 팔 벌리기 애니메이션 (0.8초)
+  // 팔 벌리기 애니메이션 (2.5초)
   const petArt = document.getElementById('pet-art');
   if (petArt && currentPet.stage !== 'EGG') {
     petArt.textContent = renderTeddyHug(currentPet);
@@ -1282,7 +1318,7 @@ function handlePetTap() {
         petArt.textContent = renderTeddy(currentPet);
         petArt.classList.remove('pet-hug');
       }
-    }, 800);
+    }, 2500);
   }
 
   const { fav, least } = getCrewFavorites(currentPet);
@@ -3804,6 +3840,395 @@ function showFinaleAdminMenu() {
   document.getElementById('finale-seal').addEventListener('click', () => {
     modal.remove();
     adminSealFinale();
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// 펜딩 질문 (답 못한 말들) - 나중에 답할 수 있게 보관
+// ════════════════════════════════════════════════════════════
+
+/**
+ * 펜딩 질문 목록 UI
+ * - 아직 답 안 된 질문에 다른 크루가 답하거나
+ * - 관리자가 직접 답하거나 일괄 삭제
+ */
+function showPendingQuestions() {
+  if (!currentPet) return;
+  const existing = document.getElementById('pending-modal');
+  if (existing) { existing.remove(); return; }
+
+  const all = currentPet.pendingQuestions || [];
+  const unanswered = all.filter(q => !q.answered);
+  const answered = all.filter(q => q.answered);
+
+  const modal = document.createElement('div');
+  modal.id = 'pending-modal';
+  modal.className = 'talk-modal';
+  modal.innerHTML = `
+    <div class="talk-modal-head" style="background:#2d4a2d;">
+      <span>답하지 못한 말들 (${unanswered.length}개)</span>
+      <span class="talk-close" id="pending-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body" style="display:block;padding:14px;">
+      <div style="color:#8fb39a;font-size:11px;margin-bottom:10px;line-height:1.6;">
+        누군가가 남긴 말. 답할 수 있다면 아이에게 전해주자.
+        ${currentPet.stage === 'BABY' ? '<br><span style="color:#e8a853;">(BABY가 아직 말을 못 해서 묵혀 있던 말들도 있어.)</span>' : ''}
+      </div>
+
+      ${unanswered.length === 0 ? `
+        <div style="color:#666;font-size:12px;text-align:center;padding:20px 0;">
+          아직 답 기다리는 말이 없어.
+        </div>
+      ` : unanswered.slice().reverse().map((q, revIdx) => {
+        const idx = all.indexOf(q);  // 원본 배열 인덱스
+        const timeStr = new Date(q.at).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
+        return `
+          <div style="border:1px dotted #5fb37a;padding:10px 12px;margin-bottom:8px;background:#0a1410;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span style="color:#5fb37a;font-size:11px;font-weight:bold;">${q.user}</span>
+              <span style="color:#666;font-size:10px;">${timeStr}</span>
+            </div>
+            <div style="font-size:13px;color:#c9c9c9;margin-bottom:8px;line-height:1.6;">
+              "${q.text.replace(/</g, '&lt;')}"
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="pending-answer" data-idx="${idx}"
+                style="flex:1;background:#0a3818;border:1px solid #03B352;color:#03B352;
+                padding:6px;font-family:inherit;font-size:11px;cursor:pointer;min-width:120px;">
+                답해주기
+              </button>
+              ${currentUser.isAdmin ? `
+                <button class="pending-delete" data-idx="${idx}"
+                  style="background:transparent;border:1px solid #c97d5f;color:#c97d5f;
+                  padding:6px 10px;font-family:inherit;font-size:11px;cursor:pointer;">
+                  ✕ 삭제
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join('')}
+
+      ${answered.length > 0 ? `
+        <div style="margin-top:16px;border-top:1px dotted #2d5a3e;padding-top:10px;">
+          <div style="color:#8fb39a;font-size:11px;font-weight:bold;margin-bottom:8px;">
+            ◢ 답한 말 (${answered.length}개) ${answered.length > 5 ? '· 최근 5개' : ''}
+          </div>
+          ${answered.slice(-5).reverse().map(q => `
+            <div style="padding:8px 10px;margin-bottom:6px;background:#050a07;border:1px solid #1a3d28;font-size:11px;line-height:1.6;">
+              <div style="color:#8fb39a;">${q.user} · <span style="color:#c9c9c9;">"${q.text.replace(/</g, '&lt;')}"</span></div>
+              <div style="color:#e8a853;margin-top:3px;">↳ ${q.answerBy} · "${(q.answer||'').replace(/</g, '&lt;')}"</div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  document.getElementById('pending-close').addEventListener('click', () => modal.remove());
+
+  modal.querySelectorAll('.pending-answer').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt(btn.dataset.idx);
+      const q = currentPet.pendingQuestions[idx];
+      if (!q) return;
+      const answer = prompt(
+        `"${q.text}"\n\n— ${q.user}의 말에 어떻게 답할까? (100자 이내)`,
+        ''
+      );
+      if (!answer || !answer.trim()) return;
+      const trimmed = answer.trim().slice(0, 100);
+
+      // 답변 저장
+      q.answered = true;
+      q.answer = trimmed;
+      q.answerBy = currentUser.name;
+      q.answerAt = Date.now();
+
+      // 아이 대사로 즉시 노출 (질문한 유저에게 개인 대사)
+      const speech = `${q.user}, "${q.text}"... ${trimmed}`;
+      saveSpeechForUser(currentPet, q.user, {
+        text: speech, at: Date.now(), to: q.user,
+      });
+
+      await Backend.savePet(currentPet);
+      await Backend.addLog({
+        user: currentUser.name, action: 'ANSWER',
+        text: `${q.user}의 오래된 말에 답함`,
+        type: 'personality',
+      });
+      showToast(`${q.user}에게 답이 전해졌어`, 'personality');
+      modal.remove();
+      setTimeout(showPendingQuestions, 200);
+    });
+  });
+
+  modal.querySelectorAll('.pending-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt(btn.dataset.idx);
+      if (!confirm('이 질문을 삭제합니다. 계속할까요?')) return;
+      currentPet.pendingQuestions.splice(idx, 1);
+      await Backend.savePet(currentPet);
+      modal.remove();
+      setTimeout(showPendingQuestions, 200);
+    });
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// 미니게임: 숫자 맞추기 (Up/Down)
+// ════════════════════════════════════════════════════════════
+
+/**
+ * 오늘 보상 가능 횟수 체크
+ */
+function checkMinigameRewardEligibility() {
+  const now = new Date();
+  const dayKey = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
+  const mg = currentPet.minigameToday;
+  if (!mg || mg.dayKey !== dayKey) {
+    return { eligible: true, count: 0, limit: CONFIG.MINIGAME_CONFIG.DAILY_REWARD_LIMIT };
+  }
+  return {
+    eligible: mg.count < CONFIG.MINIGAME_CONFIG.DAILY_REWARD_LIMIT,
+    count: mg.count,
+    limit: CONFIG.MINIGAME_CONFIG.DAILY_REWARD_LIMIT,
+  };
+}
+
+/**
+ * 미니게임 완료 시 보상 카운트 증가
+ */
+async function incrementMinigameCount() {
+  const now = new Date();
+  const dayKey = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
+  const mg = currentPet.minigameToday;
+  if (!mg || mg.dayKey !== dayKey) {
+    currentPet.minigameToday = { dayKey, count: 1 };
+  } else {
+    currentPet.minigameToday = { dayKey, count: mg.count + 1 };
+  }
+}
+
+/**
+ * Up/Down 게임 UI
+ */
+function showUpDownGame() {
+  if (!currentPet || currentPet.isDead) return;
+  const existing = document.getElementById('minigame-modal');
+  if (existing) { existing.remove(); return; }
+
+  const cfg = CONFIG.MINIGAME_CONFIG.UPDOWN;
+  const answer = Math.floor(Math.random() * (cfg.MAX - cfg.MIN + 1)) + cfg.MIN;
+  const reward = checkMinigameRewardEligibility();
+
+  const state = {
+    answer,
+    tries: 0,
+    maxTries: cfg.MAX_TRIES,
+    history: [],
+    low: cfg.MIN,
+    high: cfg.MAX,
+    finished: false,
+  };
+
+  const modal = document.createElement('div');
+  modal.id = 'minigame-modal';
+  modal.className = 'talk-modal';
+  modal.innerHTML = renderUpDownContent(state, reward);
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  attachUpDownHandlers(modal, state, reward);
+}
+
+function renderUpDownContent(state, reward) {
+  const remaining = state.maxTries - state.tries;
+  const rewardText = reward.eligible
+    ? `◆ 오늘 보상 가능 (${reward.count}/${reward.limit})`
+    : `◇ 오늘 보상 끝 · 놀이 기록은 남음`;
+
+  return `
+    <div class="talk-modal-head" style="background:#1a3d28;">
+      <span>🎯 MARS II와 숫자 맞추기</span>
+      <span class="talk-close" id="minigame-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body" style="display:block;padding:14px;">
+      <div style="color:#8fb39a;font-size:11px;margin-bottom:8px;">
+        ${state.finished ? '' : `MARS II가 ${CONFIG.MINIGAME_CONFIG.UPDOWN.MIN}-${CONFIG.MINIGAME_CONFIG.UPDOWN.MAX} 중 숫자 하나를 생각했다.`}
+      </div>
+
+      <div style="background:#050a07;border:1px dotted #2d5a3e;padding:12px;margin-bottom:10px;">
+        <div style="font-size:11px;color:#8fb39a;margin-bottom:6px;">
+          범위: ${state.low} ~ ${state.high}  ·  시도 ${state.tries} / ${state.maxTries}
+        </div>
+        <div id="updown-history" style="font-size:12px;line-height:1.7;min-height:60px;color:#03B352;white-space:pre-line;">
+${state.history.length > 0 ? state.history.join('\n') : '(아직 추측 없음)'}
+        </div>
+      </div>
+
+      ${state.finished ? `
+        <div style="padding:10px;border:1px solid ${state.won ? '#e8a853' : '#5fb37a'};background:${state.won ? '#1a1505' : '#0a1410'};color:${state.won ? '#e8a853' : '#8fb39a'};font-size:12px;line-height:1.6;text-align:center;">
+          ${state.won
+            ? `◆ 정답! 정답은 ${state.answer}이었다.<br>MARS II가 웃는다.`
+            : `◇ 시간 끝. 정답은 ${state.answer}이었다.<br>MARS II가 살짝 아쉬워한다.`}
+          ${state.rewardApplied
+            ? `<div style="margin-top:6px;color:#c9c9c9;font-size:11px;">${state.rewardText}</div>`
+            : reward.eligible
+              ? ''
+              : `<div style="margin-top:6px;color:#666;font-size:11px;">(오늘 보상 한도 초과 · 놀이만 함)</div>`
+          }
+        </div>
+        <div style="display:flex;gap:6px;margin-top:10px;">
+          <button id="updown-again"
+            style="flex:1;background:#0a3818;border:1px solid #03B352;color:#03B352;padding:10px;cursor:pointer;font-family:inherit;font-size:12px;">
+            다시 하기
+          </button>
+          <button id="updown-exit"
+            style="flex:1;background:transparent;border:1px solid #2d5a3e;color:#8fb39a;padding:10px;cursor:pointer;font-family:inherit;font-size:12px;">
+            그만하기
+          </button>
+        </div>
+      ` : `
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="number" id="updown-input" min="${state.low}" max="${state.high}"
+            placeholder="${state.low}-${state.high}"
+            style="flex:1;background:#050a07;border:1px solid #2d5a3e;color:#03B352;
+            padding:10px;font-family:inherit;font-size:14px;text-align:center;">
+          <button id="updown-submit"
+            style="background:#0a3818;border:1px solid #03B352;color:#03B352;padding:10px 18px;cursor:pointer;font-family:inherit;font-size:12px;">
+            [↵] 추측
+          </button>
+        </div>
+        <div style="margin-top:8px;font-size:10px;color:#666;text-align:center;">
+          ${rewardText}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function attachUpDownHandlers(modal, state, reward) {
+  document.getElementById('minigame-close')?.addEventListener('click', () => modal.remove());
+
+  const submit = async () => {
+    const input = document.getElementById('updown-input');
+    if (!input) return;
+    const guess = parseInt(input.value);
+    if (isNaN(guess) || guess < state.low || guess > state.high) {
+      showToast(`⚠ ${state.low}-${state.high} 범위에서 선택해주세요`, 'warn');
+      return;
+    }
+
+    state.tries++;
+    if (guess === state.answer) {
+      state.history.push(`${guess} → ✓ 정답!`);
+      state.finished = true;
+      state.won = true;
+      await onUpDownFinish(state, reward);
+    } else {
+      if (guess < state.answer) {
+        state.history.push(`${guess} → ↑ 더 큰 수`);
+        state.low = Math.max(state.low, guess + 1);
+      } else {
+        state.history.push(`${guess} → ↓ 더 작은 수`);
+        state.high = Math.min(state.high, guess - 1);
+      }
+      if (state.tries >= state.maxTries) {
+        state.finished = true;
+        state.won = false;
+        await onUpDownFinish(state, reward);
+      }
+    }
+
+    // 다시 렌더
+    modal.innerHTML = renderUpDownContent(state, reward);
+    attachUpDownHandlers(modal, state, reward);
+    // input에 포커스
+    setTimeout(() => document.getElementById('updown-input')?.focus(), 50);
+  };
+
+  document.getElementById('updown-submit')?.addEventListener('click', submit);
+  document.getElementById('updown-input')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') submit();
+  });
+  // 자동 포커스
+  setTimeout(() => document.getElementById('updown-input')?.focus(), 50);
+
+  document.getElementById('updown-again')?.addEventListener('click', () => {
+    modal.remove();
+    showUpDownGame();
+  });
+  document.getElementById('updown-exit')?.addEventListener('click', () => modal.remove());
+}
+
+/**
+ * Up/Down 게임 종료 처리
+ */
+async function onUpDownFinish(state, reward) {
+  // 보상 적용 여부 판단
+  if (!reward.eligible) {
+    state.rewardApplied = false;
+    // 로그만 남김
+    await Backend.addLog({
+      user: currentUser.name, action: 'MINIGAME',
+      text: `🎯 숫자 맞추기 ${state.won ? '성공' : '실패'} (보상 없음)`,
+      type: 'system',
+    });
+    return;
+  }
+
+  // 보상 계산
+  // 승리: 시도 횟수 적을수록 보상↑ / 실패: 적은 보상
+  let reward_text = '';
+  const triesUsed = state.tries;
+  if (state.won) {
+    if (triesUsed <= 3) {
+      // 빠른 승리
+      currentPet.happy = Math.min(100, currentPet.happy + 10);
+      currentPet.bond = Math.min(100, (currentPet.bond || 0) + 2);
+      currentPet.personality = currentPet.personality || {};
+      currentPet.personality.socialVsIntro = Math.min(100, (currentPet.personality.socialVsIntro || 0) + 2);
+      reward_text = `happy +10, bond +2, 사교 +2`;
+    } else if (triesUsed <= 5) {
+      // 보통 승리
+      currentPet.happy = Math.min(100, currentPet.happy + 7);
+      currentPet.bond = Math.min(100, (currentPet.bond || 0) + 1);
+      currentPet.personality = currentPet.personality || {};
+      currentPet.personality.diligentVsFree = Math.min(100, (currentPet.personality.diligentVsFree || 0) + 1);
+      reward_text = `happy +7, bond +1, 성실 +1`;
+    } else {
+      // 늦은 승리
+      currentPet.happy = Math.min(100, currentPet.happy + 5);
+      currentPet.personality = currentPet.personality || {};
+      currentPet.personality.activeVsCalm = Math.max(-100, (currentPet.personality.activeVsCalm || 0) - 1);
+      reward_text = `happy +5, 차분 +1`;
+    }
+  } else {
+    // 실패 보상 (작음, 차분한 성격 부여)
+    currentPet.happy = Math.min(100, currentPet.happy + 3);
+    currentPet.personality = currentPet.personality || {};
+    currentPet.personality.activeVsCalm = Math.max(-100, (currentPet.personality.activeVsCalm || 0) - 2);
+    currentPet.personality.greedVsTemperance = Math.max(-100, (currentPet.personality.greedVsTemperance || 0) - 1);
+    reward_text = `happy +3, 차분 +2, 절제 +1`;
+  }
+
+  await incrementMinigameCount();
+  state.rewardApplied = true;
+  state.rewardText = reward_text;
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'MINIGAME',
+    text: `🎯 숫자 맞추기 ${state.won ? `성공 (${triesUsed}회)` : '실패'} → ${reward_text}`,
+    type: 'system',
   });
 }
 
