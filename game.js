@@ -85,9 +85,37 @@ export function applyAction(pet, action, userName = null, override = null) {
   }
 
   pet.exp = (pet.exp || 0) + (effect.exp || 0);
-  if (action === 'train') pet.strength = Math.min(100, (pet.strength || 0) + 2);
-  if (action === 'play')  pet.bond     = Math.min(100, (pet.bond || 0) + 1);
-  if (action === 'feed')  pet.bond     = Math.min(100, (pet.bond || 0) + 0.5);
+
+  // 부가 스탯 증가 (모든 축에 기회 분배)
+  pet.strength = pet.strength || 0;
+  pet.intel    = pet.intel || 0;
+  pet.bond     = pet.bond || 0;
+
+  if (action === 'train') {
+    pet.strength = Math.min(100, pet.strength + 2);
+    pet.intel    = Math.min(100, pet.intel + 0.5);
+    pet.bond     = Math.min(100, pet.bond + 0.3);
+  }
+  if (action === 'play') {
+    pet.strength = Math.min(100, pet.strength + 0.5);
+    pet.intel    = Math.min(100, pet.intel + 0.5);
+    pet.bond     = Math.min(100, pet.bond + 1);
+  }
+  if (action === 'feed') {
+    pet.intel = Math.min(100, pet.intel + 0.3);
+    pet.bond  = Math.min(100, pet.bond + 0.5);
+  }
+  if (action === 'sleep') {
+    pet.intel = Math.min(100, pet.intel + 0.5);
+  }
+  if (action === 'clean') {
+    pet.intel = Math.min(100, pet.intel + 0.3);
+    pet.bond  = Math.min(100, pet.bond + 0.3);
+  }
+  if (action === 'talk') {
+    pet.intel = Math.min(100, pet.intel + 1);
+    pet.bond  = Math.min(100, pet.bond + 0.7);
+  }
 
   pet.counters = pet.counters || {};
   pet.counters[action] = (pet.counters[action] || 0) + 1;

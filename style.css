@@ -440,16 +440,16 @@ body {
 }
 
 /* ──────────────────────────────────────
-   테디 터치 인터랙션 - 팔 벌리기 (2.5초 유지)
+   테디 터치 인터랙션 - 팔 벌리기 (4초 유지)
    ────────────────────────────────────── */
 .pet-hug {
-  animation: petHugBounce 2.5s ease-out;
+  animation: petHugBounce 4s ease-out;
 }
 @keyframes petHugBounce {
   0%   { transform: scale(1); }
-  8%   { transform: scale(1.1); }
-  20%  { transform: scale(1.06); }
-  85%  { transform: scale(1.06); }
+  5%   { transform: scale(1.12); }
+  12%  { transform: scale(1.08); }
+  90%  { transform: scale(1.08); }
   100% { transform: scale(1); }
 }
 

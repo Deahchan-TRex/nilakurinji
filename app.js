@@ -1303,12 +1303,12 @@ let lastTapAt = 0;
 function handlePetTap() {
   if (!currentPet || currentPet.isDead) return;
 
-  // 연타 방지 (1초 쿨다운)
+  // 연타 방지 (팔 벌리기 애니메이션 4초 동안은 중복 실행 안 함)
   const now = Date.now();
-  if (now - lastTapAt < 1000) return;
+  if (now - lastTapAt < 4000) return;
   lastTapAt = now;
 
-  // 팔 벌리기 애니메이션 (2.5초)
+  // 팔 벌리기 애니메이션 (4초, 오래 유지)
   const petArt = document.getElementById('pet-art');
   if (petArt && currentPet.stage !== 'EGG') {
     petArt.textContent = renderTeddyHug(currentPet);
@@ -1318,7 +1318,7 @@ function handlePetTap() {
         petArt.textContent = renderTeddy(currentPet);
         petArt.classList.remove('pet-hug');
       }
-    }, 2500);
+    }, 4000);
   }
 
   const { fav, least } = getCrewFavorites(currentPet);
@@ -1340,8 +1340,9 @@ function handlePetTap() {
   const picked = tapEmotes[Math.floor(Math.random() * tapEmotes.length)];
   showEmote(picked);
 
-  // 아주 가벼운 bond (하루 총량 제한은 없지만 값 폭주 방지)
+  // 아주 가벼운 부가 스탯 (값 폭주 방지)
   currentPet.bond = Math.min(100, (currentPet.bond || 0) + 0.05);
+  currentPet.intel = Math.min(100, (currentPet.intel || 0) + 0.03);
 }
 
 function attachPetTapListener() {
@@ -1765,7 +1766,8 @@ async function handleTalk(topicKey) {
 
   // 효과
   currentPet.happy = Math.min(100, currentPet.happy + 3);
-  currentPet.bond = Math.min(100, (currentPet.bond || 0) + 0.3);
+  currentPet.bond = Math.min(100, (currentPet.bond || 0) + 0.7);
+  currentPet.intel = Math.min(100, (currentPet.intel || 0) + 1);
 
   // 이모티콘
   emoteForAction('talk');
@@ -3871,7 +3873,9 @@ function showPendingQuestions() {
     </div>
     <div class="talk-modal-body" style="display:block;padding:14px;">
       <div style="color:#8fb39a;font-size:11px;margin-bottom:10px;line-height:1.6;">
-        누군가가 남긴 말. 답할 수 있다면 아이에게 전해주자.
+        ${currentUser.isAdmin
+          ? '누군가가 남긴 말. 답할 수 있다면 아이에게 전해주자.'
+          : '아직 아이가 답할 수 없는 말들이야. 답은 언젠가 돌아올지도.'}
         ${currentPet.stage === 'BABY' ? '<br><span style="color:#e8a853;">(BABY가 아직 말을 못 해서 묵혀 있던 말들도 있어.)</span>' : ''}
       </div>
 
@@ -3891,20 +3895,24 @@ function showPendingQuestions() {
             <div style="font-size:13px;color:#c9c9c9;margin-bottom:8px;line-height:1.6;">
               "${q.text.replace(/</g, '&lt;')}"
             </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;">
-              <button class="pending-answer" data-idx="${idx}"
-                style="flex:1;background:#0a3818;border:1px solid #03B352;color:#03B352;
-                padding:6px;font-family:inherit;font-size:11px;cursor:pointer;min-width:120px;">
-                답해주기
-              </button>
-              ${currentUser.isAdmin ? `
+            ${currentUser.isAdmin ? `
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="pending-answer" data-idx="${idx}"
+                  style="flex:1;background:#0a3818;border:1px solid #03B352;color:#03B352;
+                  padding:6px;font-family:inherit;font-size:11px;cursor:pointer;min-width:120px;">
+                  답해주기
+                </button>
                 <button class="pending-delete" data-idx="${idx}"
                   style="background:transparent;border:1px solid #c97d5f;color:#c97d5f;
                   padding:6px 10px;font-family:inherit;font-size:11px;cursor:pointer;">
                   ✕ 삭제
                 </button>
-              ` : ''}
-            </div>
+              </div>
+            ` : `
+              <div style="color:#8fb39a;font-size:10px;text-align:right;font-style:italic;">
+                답변 대기 중
+              </div>
+            `}
           </div>
         `;
       }).join('')}
@@ -3912,12 +3920,15 @@ function showPendingQuestions() {
       ${answered.length > 0 ? `
         <div style="margin-top:16px;border-top:1px dotted #2d5a3e;padding-top:10px;">
           <div style="color:#8fb39a;font-size:11px;font-weight:bold;margin-bottom:8px;">
-            ◢ 답한 말 (${answered.length}개) ${answered.length > 5 ? '· 최근 5개' : ''}
+            ◢ 답한 말 (${answered.length}개)
           </div>
-          ${answered.slice(-5).reverse().map(q => `
-            <div style="padding:8px 10px;margin-bottom:6px;background:#050a07;border:1px solid #1a3d28;font-size:11px;line-height:1.6;">
-              <div style="color:#8fb39a;">${q.user} · <span style="color:#c9c9c9;">"${q.text.replace(/</g, '&lt;')}"</span></div>
-              <div style="color:#e8a853;margin-top:3px;">↳ ${q.answerBy} · "${(q.answer||'').replace(/</g, '&lt;')}"</div>
+          ${answered.slice().reverse().map(q => `
+            <div class="pending-answered-row" data-qidx="${all.indexOf(q)}"
+              style="padding:8px 10px;margin-bottom:6px;background:#050a07;border:1px solid #1a3d28;font-size:11px;line-height:1.6;cursor:pointer;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="color:#8fb39a;">${q.user} · <span style="color:#c9c9c9;">"${q.text.slice(0, 30).replace(/</g, '&lt;')}${q.text.length > 30 ? '...' : ''}"</span></span>
+                <span style="color:#666;font-size:10px;">▶ 답 보기</span>
+              </div>
             </div>
           `).join('')}
         </div>
@@ -3978,6 +3989,67 @@ function showPendingQuestions() {
       setTimeout(showPendingQuestions, 200);
     });
   });
+
+  // 답한 말 클릭 시 상세 보기
+  modal.querySelectorAll('.pending-answered-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const qidx = parseInt(row.dataset.qidx);
+      const q = currentPet.pendingQuestions?.[qidx];
+      if (!q || !q.answered) return;
+      showAnsweredDetail(q);
+    });
+  });
+}
+
+/**
+ * 답한 말 상세 보기 모달
+ */
+function showAnsweredDetail(q) {
+  const existing = document.getElementById('answered-detail-modal');
+  if (existing) existing.remove();
+
+  const askTime = new Date(q.at).toLocaleString('ko-KR');
+  const answerTime = q.answerAt ? new Date(q.answerAt).toLocaleString('ko-KR') : '';
+
+  const modal = document.createElement('div');
+  modal.id = 'answered-detail-modal';
+  modal.className = 'talk-modal';
+  modal.innerHTML = `
+    <div class="talk-modal-head" style="background:#2d4a2d;">
+      <span>답이 전해진 말</span>
+      <span class="talk-close" id="answered-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body" style="display:block;padding:16px;">
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <span style="color:#5fb37a;font-size:11px;font-weight:bold;">${q.user}의 말</span>
+          <span style="color:#666;font-size:10px;">${askTime}</span>
+        </div>
+        <div style="background:#0a1410;border:1px dotted #5fb37a;padding:10px 12px;font-size:13px;color:#c9c9c9;line-height:1.7;">
+          "${q.text.replace(/</g, '&lt;')}"
+        </div>
+      </div>
+
+      <div style="text-align:center;color:#2d5a3e;font-size:18px;margin:4px 0;">↓</div>
+
+      <div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <span style="color:#e8a853;font-size:11px;font-weight:bold;">${q.answerBy}가 전한 답</span>
+          <span style="color:#666;font-size:10px;">${answerTime}</span>
+        </div>
+        <div style="background:#1a1505;border:1px solid #e8a853;padding:10px 12px;font-size:13px;color:#e8a853;line-height:1.7;">
+          "${(q.answer || '').replace(/</g, '&lt;')}"
+        </div>
+      </div>
+    </div>
+  `;
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  document.getElementById('answered-close').addEventListener('click', () => modal.remove());
 }
 
 // ════════════════════════════════════════════════════════════
