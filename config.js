@@ -5,7 +5,7 @@
 export const CONFIG = {
   // ── 앱 버전 (배포마다 올림) ───────────────────────────
   // 이 값이 바뀌면 모든 접속자가 자동 새로고침됨
-  APP_VERSION: '2026.04.22.5',
+  APP_VERSION: '2026.04.22.6',
 
   // ── 캐릭터 기본 ───────────────────────────────────────
   PET_NAME: 'MARS II',
@@ -203,7 +203,7 @@ export const CONFIG = {
     // Up/Down 설정
     UPDOWN: {
       MIN: 1,
-      MAX: 50,
+      MAX: 30,
       MAX_TRIES: 7,      // 기본 시도 횟수
     },
   },
