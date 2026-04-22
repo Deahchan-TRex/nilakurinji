@@ -86,6 +86,9 @@ export function defaultPet() {
     // 미니게임 하루 카운트 { dayKey, count }
     minigameToday: null,
 
+    // CMD에서 답 못한 자유 문장들 [{user, text, at, answered, answer, answerBy, answerAt}]
+    pendingQuestions: [],
+
     // 공용 마지막 대사 (누가 봐도 보이는 것 - 진화 순간 등)
     lastSpeech: null,
     // 유저별 개인 대사: { [userName]: { text, at, to } }
