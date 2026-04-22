@@ -428,6 +428,32 @@ body {
    캐릭터 옆에 잠깐 떠오르는 반응
    ────────────────────────────────────── */
 /* ──────────────────────────────────────
+   팔 벌리기 (터치 시 순간 표시)
+   ────────────────────────────────────── */
+.pet-hug {
+  animation: petHugBounce 0.8s ease-out;
+}
+@keyframes petHugBounce {
+  0%   { transform: scale(1); }
+  30%  { transform: scale(1.08); }
+  60%  { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+
+/* ──────────────────────────────────────
+   테디 터치 인터랙션 - 팔 벌리기
+   ────────────────────────────────────── */
+.pet-hug {
+  animation: petHugBounce 0.8s ease-out;
+}
+@keyframes petHugBounce {
+  0%   { transform: scale(1); }
+  20%  { transform: scale(1.1); }
+  50%  { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+/* ──────────────────────────────────────
    로그 점프 버튼 (위에서 볼 때 새 로그 알림)
    ────────────────────────────────────── */
 .log-jump {

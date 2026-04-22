@@ -165,6 +165,59 @@ export function renderTeddyBlink(pet) {
 }
 
 // ────────────────────────────────────────────────────────────
+// 단계별 팔 벌린 템플릿 — 클릭 시 순간적으로 표시
+// ────────────────────────────────────────────────────────────
+const TEMPLATES_HUG = {
+  EGG: `
+   ⌒⌒⌒
+  ( {E} )
+   \\ {M} /
+    ‾‾‾`,  // EGG는 팔 없음, 기본과 동일
+
+  BABY: `
+  \\ ◠   ◠ /
+  (  {E}  )
+   \\   /
+    {M}{M}{M}`,
+
+  CHILD: `
+  \\ ⌒   ⌒ /
+  (  {E}  )
+   \\___/
+    | |`,
+
+  TEEN: `
+  \\⌒     ⌒/
+  (  {E}  )
+   \\___/
+   (   )
+   /   \\`,
+
+  ADULT: `
+  \\ ⌒      ⌒ /
+  (   {E}   )
+   \\____/
+  /      \\
+  \\      /
+   |    |`,
+};
+
+// ────────────────────────────────────────────────────────────
+// 팔 벌린 인터랙션 렌더 (클릭 시 잠깐 보여줄 용도)
+// ────────────────────────────────────────────────────────────
+export function renderTeddyHug(pet) {
+  const template = TEMPLATES_HUG[pet.stage] || TEMPLATES_HUG.BABY;
+  // 표정은 웃는 얼굴로 고정
+  const eyeWidth = eyeWidthFor(pet.stage);
+  const eyeStr = EYES.happy[eyeWidth];
+  const mouthChar = MOUTH.smile;
+
+  return template
+    .replace(/\{E\}/g, eyeStr)
+    .replace(/\{M\}/g, mouthChar);
+}
+
+// ────────────────────────────────────────────────────────────
 // 디버그용: 모든 단계 × 표정 조합 출력
 // ────────────────────────────────────────────────────────────
 export function renderAllExpressions() {

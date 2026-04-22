@@ -4,7 +4,7 @@
 
 import { CONFIG } from './config.js';
 import { Backend } from './backend.js';
-import { renderTeddy, renderTeddyBlink } from './teddy.js';
+import { renderTeddy, renderTeddyBlink, renderTeddyHug } from './teddy.js';
 import {
   tickStats, updateStage, applyAction, revive,
   personalityLabel, getProgress,
@@ -635,6 +635,7 @@ function showLogJumpButton(container) {
     btn.addEventListener('click', () => {
       container.scrollTop = container.scrollHeight;
       container.dataset.lastSeenAt = Date.now();
+      container.dataset.userScrolledUp = 'false';  // 자동 모드 복귀
       hideLogJumpButton();
     });
     // 로그 컨테이너의 부모 안에 absolute로 배치
@@ -658,9 +659,26 @@ function attachLogScrollListener() {
   const container = logBody.closest('.log-tbl');
   if (!container || container.dataset.scrollListener === 'on') return;
   container.dataset.scrollListener = 'on';
+  // 초기 상태: 자동 따라가기 모드 (맨 아래)
+  container.dataset.userScrolledUp = 'false';
+
+  // 프로그램에 의한 scrollTop 변경과 사용자 스크롤을 구분하기 위해
+  // wheel/touchstart 이벤트로 "사용자 의도"를 감지
+  const markUserScrolled = () => {
+    const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distFromBottom > 50) {
+      container.dataset.userScrolledUp = 'true';
+    }
+  };
+  container.addEventListener('wheel', markUserScrolled, { passive: true });
+  container.addEventListener('touchstart', markUserScrolled, { passive: true });
+  container.addEventListener('touchmove', markUserScrolled, { passive: true });
+
+  // scroll 이벤트에서 맨 아래 도달 체크 (버튼 숨김 + 자동 모드 복귀)
   container.addEventListener('scroll', () => {
     const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    if (distFromBottom < 50) {
+    if (distFromBottom < 20) {
+      container.dataset.userScrolledUp = 'false';
       container.dataset.lastSeenAt = Date.now();
       hideLogJumpButton();
     }
@@ -725,12 +743,24 @@ function render() {
       </div>
     `;
   } else {
+    // 다음 단계까지 남은 시간 계산
+    const hoursLived = Math.max(0, (Date.now() - currentPet.bornAt) / 3600000);
+    const stageInfo = CONFIG.STAGES.find(s => s.name === currentPet.stage);
+    const nextStageInfo = stageInfo ? CONFIG.STAGES.find(s => s.fromHour === stageInfo.toHour) : null;
+    const hoursToNext = stageInfo ? Math.max(0, stageInfo.toHour - hoursLived) : 0;
+    const nextStageName = nextStageInfo?.name || null;
+
     document.getElementById('pet-extras').innerHTML = `
       <div class="kv-row"><span class="k">STRENGTH</span><span class="v hl">${Math.round(currentPet.strength)}</span></div>
       <div class="kv-row"><span class="k">INTEL</span><span class="v hl">${Math.round(currentPet.intel)}</span></div>
       <div class="kv-row"><span class="k">BOND</span><span class="v hl">${Math.round(currentPet.bond)}</span></div>
       <div class="kv-row"><span class="k">LEVEL</span><span class="v">${currentPet.level || 1}</span></div>
-      <div class="kv-row divider-top"><span class="k">REVIVE</span>
+      ${nextStageName ? `
+        <div class="kv-row divider-top"><span class="k">→ ${nextStageName}</span>
+          <span class="v" style="color:#e8a853;">${Math.floor(hoursToNext)}h</span>
+        </div>
+      ` : ''}
+      <div class="kv-row ${nextStageName ? '' : 'divider-top'}"><span class="k">REVIVE</span>
         <span class="v" style="color:#c97d5f;">${renderReviveDots(currentPet.deathCount)}</span>
       </div>
     `;
@@ -844,19 +874,18 @@ function render() {
   logBody.dataset.lastAt = newestAt;
 
   // 로그 테이블 스크롤 처리
-  // - 사용자가 맨 아래 근처(50px 이내)에 있으면 자동으로 따라감
-  // - 사용자가 위로 올린 상태면 자동 이동 안 함, 대신 "최신으로" 버튼 표시
+  // - 기본 동작: 새 로그가 오면 항상 맨 아래로 자동 이동 (최신 상태 유지)
+  // - 사용자가 스크롤로 위로 올린 상태(userScrolledUp=true)면 자동 이동 중단
+  // - 사용자가 다시 맨 아래에 도달하면 자동 이동 재개
   const logContainer = logBody.closest('.log-tbl');
   if (logContainer) {
-    const distFromBottom = logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight;
-    const isNearBottom = distFromBottom < 50;
-
-    if (isNearBottom) {
-      // 따라가기
+    const userScrolledUp = logContainer.dataset.userScrolledUp === 'true';
+    if (!userScrolledUp) {
+      // 자동 따라감
       logContainer.scrollTop = logContainer.scrollHeight;
       hideLogJumpButton();
     } else {
-      // 사용자가 위에서 보고 있음. 새 로그가 왔으면 점프 버튼 표시
+      // 사용자가 올려놓은 상태 → 새 로그 들어오면 버튼 표시
       const hasNewSinceLastView = newestAt > (parseInt(logContainer.dataset.lastSeenAt) || 0);
       if (hasNewSinceLastView) {
         showLogJumpButton(logContainer);
@@ -1243,6 +1272,19 @@ function handlePetTap() {
   if (now - lastTapAt < 1000) return;
   lastTapAt = now;
 
+  // 팔 벌리기 애니메이션 (0.8초)
+  const petArt = document.getElementById('pet-art');
+  if (petArt && currentPet.stage !== 'EGG') {
+    petArt.textContent = renderTeddyHug(currentPet);
+    petArt.classList.add('pet-hug');
+    setTimeout(() => {
+      if (petArt) {
+        petArt.textContent = renderTeddy(currentPet);
+        petArt.classList.remove('pet-hug');
+      }
+    }, 800);
+  }
+
   const { fav, least } = getCrewFavorites(currentPet);
   const speech = pickTapSpeech(currentPet, {
     user: currentUser.name,
@@ -1406,18 +1448,15 @@ function initDailyTalk(pet) {
 
   // 오늘 키가 다르면 리셋
   if (!dt || dt.dayKey !== dayKey) {
-    const bond = pet.bond || 0;
-    // 유대에 따라 하루 대화 횟수 결정
-    let maxTurns = 4;
-    if (bond > 60) maxTurns = 6;
-    else if (bond > 30) maxTurns = 5;
-
     pet.dailyTalk = {
       dayKey,
       usedTopics: [],
       lastTopic: null,
-      turnsLeft: maxTurns,
+      turnsLeft: 9999,  // 실질 무제한
     };
+  } else if (dt.turnsLeft < 100) {
+    // 이전 세션 데이터가 제한 있는 상태로 남아있으면 무제한으로 확장
+    dt.turnsLeft = 9999;
   }
   return pet.dailyTalk;
 }
@@ -1599,7 +1638,7 @@ function renderTalkMenu() {
   modal.className = 'talk-modal';
   modal.innerHTML = `
     <div class="talk-modal-head">
-      <span>▶ ${headText} <span style="color:#8fb39a;font-weight:400;">(오늘 남은 이야기: ${dt.turnsLeft}회)</span></span>
+      <span>▶ ${headText}</span>
       <span class="talk-close" id="talk-close">✕ 닫기</span>
     </div>
     <div class="talk-modal-body">
@@ -2878,14 +2917,19 @@ function showSignalDetail(signalId) {
 }
 
 function renderSignalDetailContent(info) {
-  const { def, state, currentStage, maxStage, percent, text, canDecode, nextCost, isComplete } = info;
+  const { def, state, currentStage, maxStage, workingStage, percent, text, canDecode, nextCost, isComplete,
+          requiredDecoders, currentWorkingParticipants, participantsNeeded, stageParticipants } = info;
   const tierIcon = def.tier === 1 ? '★' : def.tier === 2 ? '★★' : '★★★';
   const isLowEnergy = currentPet.energy < CONFIG.SIGNAL_CONFIG.LOW_ENERGY_THRESHOLD;
   const isCriticalEnergy = currentPet.energy < CONFIG.SIGNAL_CONFIG.CRITICAL_ENERGY_THRESHOLD;
   const blockedByCritical = def.tier === 3 && isCriticalEnergy;
 
+  // 내가 이미 이 단계에 참여했는지
+  const myName = currentUser?.name;
+  const alreadyParticipated = myName && currentWorkingParticipants.includes(myName);
+
   let warningHtml = '';
-  if (canDecode && currentStage > 0) {
+  if (canDecode) {
     if (blockedByCritical) {
       warningHtml = `<div style="color:#ff6b6b;font-size:11px;margin:8px 0;padding:6px;border:1px solid #ff6b6b;">
         ⚠ 에너지 부족 (10 미만): 결정적 신호 해독 시도 시 신호가 영구 소멸합니다.
@@ -2895,7 +2939,41 @@ function renderSignalDetailContent(info) {
         ⚠ 에너지 부족 (25 미만): 해독 시 happy -20, hygiene -10 페널티가 발생합니다.
       </div>`;
     }
+    if (alreadyParticipated) {
+      warningHtml += `<div style="color:#8fb39a;font-size:11px;margin:8px 0;padding:6px;border:1px dotted #5fb37a;">
+        ◎ 이 단계에 이미 참여했습니다. 다른 크루가 ${participantsNeeded}명 더 참여하면 다음 단계로 넘어갑니다.
+      </div>`;
+    }
   }
+
+  // 참여자 현황 박스 (진행 중 단계)
+  let progressHtml = '';
+  if (canDecode && !isComplete) {
+    const filled = currentWorkingParticipants.length;
+    const boxes = Array.from({length: requiredDecoders}, (_, i) => {
+      if (i < filled) {
+        return `<span style="display:inline-block;width:18px;height:18px;background:#03B352;color:#000;text-align:center;line-height:18px;font-size:10px;margin-right:3px;border-radius:2px;">✓</span>`;
+      }
+      return `<span style="display:inline-block;width:18px;height:18px;border:1px solid #2d5a3e;margin-right:3px;border-radius:2px;"></span>`;
+    }).join('');
+    const participantNames = currentWorkingParticipants.length > 0
+      ? currentWorkingParticipants.join(', ')
+      : '(없음)';
+    progressHtml = `
+      <div style="margin:10px 0;padding:8px 10px;border:1px dotted #5fb37a;background:#0a1410;">
+        <div style="font-size:11px;color:#5fb37a;margin-bottom:4px;">
+          ◢ ${workingStage}단계 참여 현황 (${filled}/${requiredDecoders})
+        </div>
+        <div style="margin-bottom:4px;">${boxes}</div>
+        <div style="font-size:10px;color:#8fb39a;">참여: ${participantNames}</div>
+      </div>
+    `;
+  }
+
+  // 버튼 텍스트 / 비활성 조건
+  const buttonDisabled = blockedByCritical || alreadyParticipated;
+  const buttonColor = buttonDisabled ? '#ff6b6b' : '#03B352';
+  const buttonBg = buttonDisabled ? '#2a1a1a' : '#0a3818';
 
   return `
     <div class="talk-modal-head signal-head">
@@ -2904,7 +2982,7 @@ function renderSignalDetailContent(info) {
     </div>
     <div class="talk-modal-body" style="display:block;padding:14px;">
       <div style="color:#666;font-size:10px;margin-bottom:8px;">
-        ${def.id} · 발신자 불명 · 좌표 MARS / QUADRANT-7
+        ${def.id} · 발신자 불명 · 좌표 MARS / QUADRANT-7 · ${'★'.repeat(def.tier)} ${requiredDecoders}명 참여 필요/단계
       </div>
 
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:11px;">
@@ -2919,6 +2997,7 @@ function renderSignalDetailContent(info) {
 ${text || '(아직 신호를 열지 않았습니다)'}
       </div>
 
+      ${progressHtml}
       ${warningHtml}
 
       ${isComplete ? `
@@ -2931,13 +3010,16 @@ ${text || '(아직 신호를 열지 않았습니다)'}
       <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;">
         ${canDecode ? `
           <button id="signal-decode-btn"
-            style="flex:1;background:${blockedByCritical ? '#3a1a1a' : '#0a3818'};
-                   color:${blockedByCritical ? '#ff6b6b' : '#03B352'};
-                   border:1px solid ${blockedByCritical ? '#ff6b6b' : '#03B352'};
-                   padding:10px;cursor:${blockedByCritical ? 'not-allowed' : 'pointer'};
+            style="flex:1;background:${buttonBg};color:${buttonColor};
+                   border:1px solid ${buttonColor};
+                   padding:10px;cursor:${buttonDisabled ? 'not-allowed' : 'pointer'};
                    font-family:inherit;font-size:12px;"
-            ${blockedByCritical ? 'disabled' : ''}>
-            ${currentStage === 0 ? '[F] 신호 열기' : `[F] ${currentStage + 1}단계 해독`} (energy -${nextCost})
+            ${buttonDisabled ? 'disabled' : ''}>
+            ${alreadyParticipated
+              ? '✓ 이미 참여함'
+              : (currentStage === 0
+                ? `[F] 신호 열기 (energy -${nextCost})`
+                : `[F] ${workingStage}단계 참여 (energy -${nextCost})`)}
           </button>
         ` : ''}
         <button id="signal-defer-btn"
@@ -2948,7 +3030,7 @@ ${text || '(아직 신호를 열지 않았습니다)'}
 
       <div style="margin-top:8px;font-size:10px;color:#666;text-align:center;">
         해독 단계 ${currentStage} / ${maxStage}
-        ${state.decodedBy.length > 0 ? `· 참여 크루: ${state.decodedBy.join(', ')}` : ''}
+        ${state.decodedBy.length > 0 ? `· 총 참여: ${state.decodedBy.length}명` : ''}
       </div>
     </div>
   `;
@@ -2972,6 +3054,7 @@ function attachSignalDetailHandlers(modal, signalId) {
           not_spawned: '⚠ 아직 수신되지 않은 신호',
           expired: '⚠ 이미 소멸한 신호',
           already_complete: '⚠ 이미 완전 해독됨',
+          already_participated: '◎ 이미 이 단계에 참여했습니다',
           critical_energy: '⚠ 에너지 10 미만 · 결정적 신호 해독 불가',
           fatigued: '⚠ 과부하 상태 · 12시간 후 다시 시도',
         };
@@ -2985,16 +3068,24 @@ function attachSignalDetailHandlers(modal, signalId) {
         showToast(`⚠ 에너지 부족 페널티: happy -20, hygiene -10`, 'warn');
       }
 
-      // 완료 알림
+      // 단계 완료 알림
+      const sigName = getSignalInfo(currentPet, signalId).def.name;
       if (result.completed) {
-        showToast(`◆ 해독 완료: ${getSignalInfo(currentPet, signalId).def.name}`, 'personality');
-
-        // 로그 추가
+        showToast(`◆ 해독 완료: ${sigName}`, 'personality');
         await Backend.addLog({
           user: currentUser.name, action: 'DECODE',
-          text: `📡 신호 "${getSignalInfo(currentPet, signalId).def.name}" 완전 해독`,
+          text: `📡 신호 "${sigName}" 완전 해독`,
           type: 'epic',
         });
+      } else if (result.stageCompleted) {
+        showToast(`✓ ${result.stage}단계 해독! 다음 단계 오픈`, 'personality');
+        await Backend.addLog({
+          user: currentUser.name, action: 'DECODE',
+          text: `📡 신호 "${sigName}" ${result.stage}단계 완료`,
+          type: 'epic',
+        });
+      } else {
+        showToast(`◎ 참여 기록 (${result.participantsNeeded}명 더 필요)`, 'personality');
       }
 
       await Backend.savePet(currentPet);
@@ -3265,6 +3356,26 @@ function showSealedLetter() {
 }
 
 /**
+ * 예약 발사 공통 함수
+ */
+async function scheduleSignalFire(sigDef, fireAt, label) {
+  currentPet.scheduledSignals = currentPet.scheduledSignals || [];
+  currentPet.scheduledSignals.push({
+    signalId: sigDef.id,
+    fireAt: fireAt,
+    scheduledBy: currentUser.name,
+  });
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'SCHEDULE',
+    text: `⏱ "${sigDef.name}" 신호 예약 (${label})`,
+    type: 'admin',
+    viewer: currentUser.name,
+  });
+  showToast(`⏱ 예약 완료 (${label})`, 'personality');
+}
+
+/**
  * 관리자 신호 제어 패널
  * - 다음 신호 발사 / 발사 예약 / 모든 신호 진행 상태 / 강제 만료 / 재시작
  */
@@ -3273,9 +3384,15 @@ function showSignalAdminPanel() {
   const existing = document.getElementById('signal-admin-modal');
   if (existing) { existing.remove(); return; }
 
-  // 다음 발사 후보 = SIGNALS 순서대로 첫 번째 미발사 (FINALE 제외)
+  // 다음 발사 후보 = triggerHour 순으로 정렬 후 첫 번째 미발사 (FINALE 제외)
   const signals = currentPet.signals || {};
-  const next = CONFIG.SIGNALS.find(s => !signals[s.id] && !s.isFinale);
+  const sortedSignals = [...CONFIG.SIGNALS]
+    .filter(s => !s.isFinale)
+    .sort((a, b) => a.triggerHour - b.triggerHour);
+  const next = sortedSignals.find(s => !signals[s.id]);
+
+  // 미발사 신호 전체 목록 (순번 선택용)
+  const unfired = sortedSignals.filter(s => !signals[s.id]);
 
   // 예약된 신호 목록
   const scheduled = (currentPet.scheduledSignals || []).slice().sort((a, b) => a.fireAt - b.fireAt);
@@ -3310,18 +3427,50 @@ function showSignalAdminPanel() {
             <strong>${next.name}</strong>
           </div>
           <div style="color:#8fb39a;font-size:11px;margin-bottom:10px;">
-            ${next.id} · 권장 ${next.triggerHour}h · 보상: ${next.reward}
+            ${next.id} · 권장 ${next.triggerHour}h · ${next.reward}
           </div>
-          <div style="display:flex;gap:6px;">
+          <div style="margin-bottom:10px;font-size:11px;">
+            <span style="color:#8fb39a;">전체 신호 선택:</span>
+            <select id="sig-select-manual"
+              style="background:#050a07;color:#03B352;border:1px solid #2d5a3e;
+              padding:4px;font-family:inherit;font-size:11px;margin-left:6px;min-width:240px;">
+              <option value="">(기본: ${next.id})</option>
+              ${sortedSignals.map(s => {
+                const existing = signals[s.id];
+                let status = '';
+                let disabled = '';
+                if (existing) {
+                  disabled = 'disabled';
+                  if (existing.completedAt) status = ' ✓ 해독완료';
+                  else if (existing.expired) status = ' ✕ 만료';
+                  else if (existing.stage > 0) status = ` ▷ 진행중(${existing.stage}단계)`;
+                  else status = ' ▶ 발사됨';
+                }
+                const isSelected = s.id === next.id ? 'selected' : '';
+                return `
+                  <option value="${s.id}" ${isSelected} ${disabled}
+                    style="${disabled ? 'color:#666;' : ''}">
+                    ${s.id.slice(-3)} ${'★'.repeat(s.tier)} ${s.name} (${s.triggerHour}h)${status}
+                  </option>
+                `;
+              }).join('')}
+            </select>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button id="sig-fire-now"
               style="flex:1;background:#0a3818;border:1px solid #03B352;color:#03B352;
-              padding:8px;cursor:pointer;font-family:inherit;font-size:11px;">
+              padding:8px;cursor:pointer;font-family:inherit;font-size:11px;min-width:120px;">
               🚀 지금 즉시 발사
             </button>
-            <button id="sig-schedule"
+            <button id="sig-schedule-delay"
               style="flex:1;background:transparent;border:1px solid #5fb37a;color:#5fb37a;
-              padding:8px;cursor:pointer;font-family:inherit;font-size:11px;">
-              ⏱ N시간 후 예약
+              padding:8px;cursor:pointer;font-family:inherit;font-size:11px;min-width:120px;">
+              ⏱ N분 후 예약
+            </button>
+            <button id="sig-schedule-time"
+              style="flex:1;background:transparent;border:1px solid #5fb37a;color:#5fb37a;
+              padding:8px;cursor:pointer;font-family:inherit;font-size:11px;min-width:120px;">
+              🕐 시각 지정 예약
             </button>
           </div>
         ` : `
@@ -3339,10 +3488,12 @@ function showSignalAdminPanel() {
           </div>
           ${scheduled.map((s, i) => {
             const def = CONFIG.SIGNALS.find(d => d.id === s.signalId);
+            const fire = new Date(s.fireAt);
             const eta = Math.max(0, Math.floor((s.fireAt - Date.now()) / 60000));
+            const timeStr = `${String(fire.getHours()).padStart(2,'0')}:${String(fire.getMinutes()).padStart(2,'0')}`;
             return `
               <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:4px 0;">
-                <span><strong>${def?.name || s.signalId}</strong> · ${eta}분 후</span>
+                <span><strong>${def?.name || s.signalId}</strong> · ${timeStr} (${eta}분 후)</span>
                 <button class="sig-cancel-sched" data-idx="${i}"
                   style="background:transparent;border:1px solid #ff6b6b;color:#ff6b6b;
                   padding:2px 8px;font-family:inherit;font-size:10px;cursor:pointer;">취소</button>
@@ -3375,42 +3526,95 @@ function showSignalAdminPanel() {
   // 이벤트 핸들러
   document.getElementById('sigadmin-close').addEventListener('click', () => modal.remove());
 
+  // 드롭다운에서 선택한 신호 우선, 없으면 next 사용
+  const getSelectedSignal = () => {
+    const selectEl = document.getElementById('sig-select-manual');
+    const selectedId = selectEl?.value;
+    if (selectedId) {
+      return CONFIG.SIGNALS.find(s => s.id === selectedId) || next;
+    }
+    return next;
+  };
+
   document.getElementById('sig-fire-now')?.addEventListener('click', async () => {
-    if (!confirm(`📡 "${next.name}" 신호를 지금 즉시 발사합니다.\n\n모든 크루에게 알림이 갑니다. 계속할까요?`)) return;
-    spawnSignal(currentPet, next);
+    const target = getSelectedSignal();
+    if (!target) return;
+    // 안전 가드: 이미 발사된 신호면 차단
+    if (currentPet.signals?.[target.id]) {
+      showToast(`⚠ "${target.name}"은 이미 진행한 신호입니다`, 'warn');
+      return;
+    }
+    if (!confirm(`📡 "${target.name}" 신호를 지금 즉시 발사합니다.\n\n모든 크루에게 알림이 갑니다. 계속할까요?`)) return;
+    spawnSignal(currentPet, target);
     await Backend.savePet(currentPet);
     await Backend.addLog({
       user: null, action: 'SIGNAL',
-      text: `📡 새로운 신호 수신: "${next.name}" (24시간 내 해독)`,
+      text: `📡 새로운 신호 수신: "${target.name}" (24시간 내 해독)`,
       type: 'epic',
     });
-    showToast(`📡 발사: "${next.name}"`, 'personality');
+    showToast(`📡 발사: "${target.name}"`, 'personality');
     modal.remove();
     setTimeout(showSignalAdminPanel, 200);
   });
 
-  document.getElementById('sig-schedule')?.addEventListener('click', async () => {
-    const input = prompt(`📡 "${next.name}" 신호를 몇 분 후에 발사할까요?\n\n예: 30 (30분 후), 60 (1시간 후), 360 (6시간 후)`, '60');
+  document.getElementById('sig-schedule-delay')?.addEventListener('click', async () => {
+    const target = getSelectedSignal();
+    if (!target) return;
+    if (currentPet.signals?.[target.id]) {
+      showToast(`⚠ "${target.name}"은 이미 진행한 신호입니다`, 'warn');
+      return;
+    }
+    const input = prompt(`📡 "${target.name}" 신호를 몇 분 후에 발사할까요?\n\n예: 30 (30분 후), 60 (1시간 후), 360 (6시간 후)`, '60');
     if (!input) return;
     const minutes = Number(input);
     if (isNaN(minutes) || minutes < 1) {
       showToast('⚠ 올바른 숫자를 입력해주세요 (분 단위)', 'warn');
       return;
     }
-    currentPet.scheduledSignals = currentPet.scheduledSignals || [];
-    currentPet.scheduledSignals.push({
-      signalId: next.id,
-      fireAt: Date.now() + minutes * 60 * 1000,
-      scheduledBy: currentUser.name,
-    });
-    await Backend.savePet(currentPet);
-    await Backend.addLog({
-      user: currentUser.name, action: 'SCHEDULE',
-      text: `⏱ "${next.name}" 신호 예약 (${minutes}분 후 발사)`,
-      type: 'admin',
-      viewer: currentUser.name,
-    });
-    showToast(`⏱ 예약 완료 (${minutes}분 후)`, 'personality');
+    scheduleSignalFire(target, Date.now() + minutes * 60 * 1000, `${minutes}분 후`);
+    modal.remove();
+    setTimeout(showSignalAdminPanel, 200);
+  });
+
+  document.getElementById('sig-schedule-time')?.addEventListener('click', async () => {
+    const target = getSelectedSignal();
+    if (!target) return;
+    if (currentPet.signals?.[target.id]) {
+      showToast(`⚠ "${target.name}"은 이미 진행한 신호입니다`, 'warn');
+      return;
+    }
+    // 현재 시각 기준으로 기본값 제시 (30분 후 올림)
+    const now = new Date();
+    const defaultH = String(now.getHours()).padStart(2, '0');
+    const defaultM = String(now.getMinutes()).padStart(2, '0');
+    const input = prompt(
+      `📡 "${target.name}" 신호를 언제 발사할까요?\n\n` +
+      `24시간제 HH:MM 형식으로 입력 (예: 22:00, 09:30)\n` +
+      `현재 시각을 지났으면 내일로 자동 설정됩니다.`,
+      `${defaultH}:${defaultM}`
+    );
+    if (!input) return;
+    const match = input.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) {
+      showToast('⚠ HH:MM 형식으로 입력해주세요 (예: 22:00)', 'warn');
+      return;
+    }
+    const targetH = parseInt(match[1]);
+    const targetM = parseInt(match[2]);
+    if (targetH < 0 || targetH > 23 || targetM < 0 || targetM > 59) {
+      showToast('⚠ 올바른 시각이 아닙니다', 'warn');
+      return;
+    }
+    const target_time = new Date();
+    target_time.setHours(targetH, targetM, 0, 0);
+    // 현재 시각 이전이면 내일로
+    if (target_time.getTime() <= Date.now()) {
+      target_time.setDate(target_time.getDate() + 1);
+    }
+    const etaMin = Math.round((target_time.getTime() - Date.now()) / 60000);
+    const timeLabel = `${String(target_time.getHours()).padStart(2, '0')}:${String(target_time.getMinutes()).padStart(2, '0')}`;
+    if (!confirm(`📡 "${target.name}"을\n${timeLabel} (${etaMin}분 후)에 발사합니다.\n\n계속할까요?`)) return;
+    scheduleSignalFire(target, target_time.getTime(), timeLabel);
     modal.remove();
     setTimeout(showSignalAdminPanel, 200);
   });

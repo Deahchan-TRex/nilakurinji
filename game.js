@@ -398,8 +398,12 @@ export function expireOldSignals(pet) {
 }
 
 /**
- * 해독 시도
- * @returns { ok, reason?, penalty?, reward?, completed? }
+ * 해독 시도 (참여 인원제)
+ * - 각 단계는 DECODERS_PER_STAGE[tier] 명이 참여해야 완료됨
+ * - 같은 크루는 같은 단계 참여 2번 불가 (다른 단계는 가능)
+ * - 에너지 costs[stage] 개별 소모 (1인당)
+ * @returns { ok, reason?, cost?, penalty?, reward?, completed?,
+ *            stageCompleted?, participantsNeeded?, stage? }
  */
 export function decodeSignal(pet, signalId, userName) {
   if (pet.isDead) return { ok: false, reason: 'dead' };
@@ -413,20 +417,30 @@ export function decodeSignal(pet, signalId, userName) {
   const maxStage = Object.keys(sigDef.stages).length;
   if (sig.stage >= maxStage) return { ok: false, reason: 'already_complete' };
 
-  // 에너지 비용 계산
-  const nextStage = sig.stage + 1;
-  let cost = 0;
-  if (sig.stage === 0) cost = sigDef.costs.open || 20;
-  else if (sig.stage === 1) cost = sigDef.costs.decode1 || sigDef.costs.decode || 25;
-  else if (sig.stage === 2) cost = sigDef.costs.decode2 || 25;
+  // 진행 중인 단계 = sig.stage + 1
+  const workingStage = sig.stage + 1;
+  const requiredDecoders = cfg.DECODERS_PER_STAGE?.[sigDef.tier] || 2;
 
-  // 에너지 부족 체크
+  // 단계별 참여자 추적
+  sig.stageParticipants = sig.stageParticipants || {};
+  sig.stageParticipants[workingStage] = sig.stageParticipants[workingStage] || [];
+  const currentParticipants = sig.stageParticipants[workingStage];
+
+  // 같은 단계 중복 참여 차단
+  if (currentParticipants.includes(userName)) {
+    return { ok: false, reason: 'already_participated' };
+  }
+
+  // 에너지 비용
+  const cost = sigDef.costs?.[workingStage] || 5;
+
+  // 결정적 신호 + critical energy 차단
   if (pet.energy < cfg.CRITICAL_ENERGY_THRESHOLD && sigDef.tier === 3) {
     return { ok: false, reason: 'critical_energy' };
   }
   const isLowEnergy = pet.energy < cfg.LOW_ENERGY_THRESHOLD;
 
-  // 피로 체크 (24시간 내 몇 번 해독했는지)
+  // 피로 체크
   pet.decodeFatigue = pet.decodeFatigue || {};
   const fatigue = pet.decodeFatigue[userName];
   if (fatigue && fatigue.count >= cfg.FATIGUE_THRESHOLD) {
@@ -434,7 +448,6 @@ export function decodeSignal(pet, signalId, userName) {
     if (elapsed < cfg.FATIGUE_HOURS * 3600 * 1000) {
       return { ok: false, reason: 'fatigued' };
     } else {
-      // 피로 해제
       delete pet.decodeFatigue[userName];
     }
   }
@@ -442,7 +455,7 @@ export function decodeSignal(pet, signalId, userName) {
   // 에너지 소모
   pet.energy = Math.max(0, pet.energy - cost);
 
-  // 페널티 적용 (에너지 부족)
+  // 에너지 부족 페널티
   let penalty = null;
   if (isLowEnergy) {
     const p = cfg.PENALTY_LOW_ENERGY;
@@ -451,8 +464,8 @@ export function decodeSignal(pet, signalId, userName) {
     penalty = p;
   }
 
-  // 상태 갱신
-  sig.stage = nextStage;
+  // 참여자 기록
+  currentParticipants.push(userName);
   sig.lastActionAt = Date.now();
   if (!sig.decodedBy.includes(userName)) {
     sig.decodedBy.push(userName);
@@ -465,15 +478,34 @@ export function decodeSignal(pet, signalId, userName) {
     pet.decodeFatigue[userName].count++;
   }
 
-  // 완전 해독 보상 적용
+  // 단계 완료 체크: 필요 인원 모이면 다음 단계로
+  const stageCompleted = currentParticipants.length >= requiredDecoders;
   let reward = null;
-  const completed = nextStage >= maxStage;
-  if (completed) {
-    sig.completedAt = Date.now();
-    reward = applySignalReward(pet, sigDef);
+  let completed = false;
+
+  if (stageCompleted) {
+    sig.stage = workingStage;
+
+    // 최종 단계 완료 = 완전 해독
+    if (workingStage >= maxStage) {
+      completed = true;
+      sig.completedAt = Date.now();
+      reward = applySignalReward(pet, sigDef);
+    }
   }
 
-  return { ok: true, cost, penalty, reward, completed, stage: nextStage };
+  return {
+    ok: true,
+    cost,
+    penalty,
+    reward,
+    completed,
+    stageCompleted,
+    stage: sig.stage,
+    workingStage,
+    participantsNeeded: Math.max(0, requiredDecoders - currentParticipants.length),
+    currentParticipants: currentParticipants.slice(),
+  };
 }
 
 /**
@@ -537,17 +569,20 @@ export function getSignalInfo(pet, signalId) {
 
   const maxStage = Object.keys(sigDef.stages).length;
   const currentStage = sig.stage;
-  const nextStage = currentStage + 1;
+  const workingStage = currentStage + 1;
 
-  // 현재 보여질 텍스트
+  // 현재 공개된 텍스트
   const text = currentStage === 0 ? null : sigDef.stages[currentStage];
   const percent = currentStage === 0 ? 0 : sigDef.percents[currentStage];
 
   // 다음 단계 비용
-  let nextCost = 0;
-  if (currentStage === 0) nextCost = sigDef.costs.open || 20;
-  else if (currentStage === 1) nextCost = sigDef.costs.decode1 || sigDef.costs.decode || 25;
-  else if (currentStage === 2) nextCost = sigDef.costs.decode2 || 25;
+  const nextCost = sigDef.costs?.[workingStage] || 5;
+
+  // 단계별 참여자 현황
+  const cfg = CONFIG.SIGNAL_CONFIG;
+  const requiredDecoders = cfg.DECODERS_PER_STAGE?.[sigDef.tier] || 2;
+  const stageParticipants = sig.stageParticipants || {};
+  const currentWorkingParticipants = stageParticipants[workingStage] || [];
 
   return {
     def: sigDef,
@@ -556,9 +591,14 @@ export function getSignalInfo(pet, signalId) {
     percent,
     currentStage,
     maxStage,
+    workingStage,
     canDecode: currentStage < maxStage && !sig.expired,
     nextCost,
     isComplete: currentStage >= maxStage,
+    requiredDecoders,
+    currentWorkingParticipants,
+    participantsNeeded: Math.max(0, requiredDecoders - currentWorkingParticipants.length),
+    stageParticipants,
   };
 }
 
