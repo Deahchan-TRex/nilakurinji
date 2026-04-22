@@ -30,6 +30,16 @@ import {
 // ────────────────────────────────────────────────────────────
 let currentUser = null;   // { name, key, isAdmin }
 let currentPet = null;
+
+/**
+ * OBJECT(관리자) 미니게임 테스트 모드
+ * true일 때 pet 저장/로그 기록/카운트 증가 모두 스킵
+ */
+let minigameTestMode = false;
+
+function isMinigameTestMode() {
+  return currentUser?.isAdmin && minigameTestMode;
+}
 let logs = [];
 let prevUser = null;
 let presenceMap = {};     // { userName: lastSeenMs }
@@ -268,7 +278,7 @@ function renderMain() {
     else if (key === 'l') showLore();
     else if (key === 'k') showTalkMenu();
     else if (key === 'n') showSignalList();
-    else if (key === 'g') showUpDownGame();
+    else if (key === 'g') showMinigameHub();
     else if (key === 'q') showPendingQuestions();
   });
 }
@@ -395,7 +405,7 @@ function renderCommandButtons() {
       else if (act === 'reset') adminReset();
       else if (act === 'signal') showSignalList();
       else if (act === 'signal-admin') showSignalAdminPanel();
-      else if (act === 'minigame') showUpDownGame();
+      else if (act === 'minigame') showMinigameHub();
       else if (act === 'pending') showPendingQuestions();
       else if (act === 'finale') {
         // 이미 봉인된 경우 편지 보기, 아니면 답장 UI
@@ -4060,6 +4070,10 @@ function showAnsweredDetail(q) {
  * 오늘 보상 가능 횟수 체크
  */
 function checkMinigameRewardEligibility() {
+  // 테스트 모드: 항상 eligible, 카운트는 "테스트" 라벨
+  if (isMinigameTestMode()) {
+    return { eligible: true, count: 0, limit: CONFIG.MINIGAME_CONFIG.DAILY_REWARD_LIMIT, testMode: true };
+  }
   const now = new Date();
   const dayKey = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
   const mg = currentPet.minigameToday;
@@ -4077,6 +4091,7 @@ function checkMinigameRewardEligibility() {
  * 미니게임 완료 시 보상 카운트 증가
  */
 async function incrementMinigameCount() {
+  if (isMinigameTestMode()) return;  // 테스트 모드: 카운트 증가 안 함
   const now = new Date();
   const dayKey = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
   const mg = currentPet.minigameToday;
@@ -4085,6 +4100,702 @@ async function incrementMinigameCount() {
   } else {
     currentPet.minigameToday = { dayKey, count: mg.count + 1 };
   }
+}
+
+// ════════════════════════════════════════════════════════════
+// 미니게임 허브 — 단계별 게임 해금
+// ════════════════════════════════════════════════════════════
+
+/**
+ * 미니게임 메뉴 허브
+ * - BABY까지: Up/Down만 (바로 실행)
+ * - CHILD 이상: 선택 메뉴 (Up/Down + 블랙잭 + 틱택토)
+ * - OBJECT: 테스트 모드 토글 버튼
+ */
+function showMinigameHub() {
+  if (!currentPet || currentPet.isDead) return;
+  const existing = document.getElementById('minigame-hub-modal');
+  if (existing) { existing.remove(); return; }
+
+  const stage = currentPet.stage;
+  const unlocked = (stage === 'CHILD' || stage === 'TEEN' || stage === 'ADULT');
+
+  // BABY는 바로 Up/Down 실행 (기존 동작 유지)
+  if (!unlocked && !currentUser.isAdmin) {
+    showUpDownGame();
+    return;
+  }
+
+  const reward = checkMinigameRewardEligibility();
+  const isAdmin = currentUser.isAdmin;
+
+  const modal = document.createElement('div');
+  modal.id = 'minigame-hub-modal';
+  modal.className = 'talk-modal';
+  modal.innerHTML = `
+    <div class="talk-modal-head" style="background:#1a3d28;">
+      <span>MINIGAME · 무엇을 할까?</span>
+      <span class="talk-close" id="mghub-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body" style="display:block;padding:16px;">
+      ${isAdmin ? `
+        <div style="padding:8px 10px;margin-bottom:14px;border:1px dotted #e8a853;background:#1a1505;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px;color:#e8a853;">
+            <input type="checkbox" id="mghub-testmode" ${minigameTestMode ? 'checked' : ''}>
+            <span>OBJECT 테스트 모드 · ${minigameTestMode ? '<strong>켜짐</strong>' : '꺼짐'}</span>
+          </label>
+          <div style="color:#c9a06b;font-size:10px;margin-top:4px;line-height:1.5;">
+            테스트 모드일 때는 스탯 변화, 로그 기록, 하루 카운트 모두 저장되지 않습니다.
+          </div>
+        </div>
+      ` : ''}
+
+      <div style="color:#8fb39a;font-size:11px;margin-bottom:12px;">
+        MARS II가 함께 놀고 싶어해. 어떤 놀이?
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="mg-option" data-game="updown"
+          style="padding:14px;background:#0a1410;border:1px solid #03B352;color:#03B352;
+          font-family:inherit;font-size:13px;cursor:pointer;text-align:left;">
+          <div style="font-weight:bold;">UP/DOWN · 숫자 맞추기</div>
+          <div style="font-size:11px;color:#8fb39a;margin-top:4px;">
+            1~30 사이 숫자를 7번 안에 맞추기
+          </div>
+        </button>
+
+        <button class="mg-option ${!unlocked ? 'mg-locked' : ''}" data-game="blackjack"
+          ${!unlocked ? 'disabled' : ''}
+          style="padding:14px;background:${unlocked?'#0a1410':'#050505'};
+          border:1px solid ${unlocked?'#5fb37a':'#333'};color:${unlocked?'#5fb37a':'#555'};
+          font-family:inherit;font-size:13px;cursor:${unlocked?'pointer':'not-allowed'};text-align:left;">
+          <div style="font-weight:bold;">
+            BLACKJACK · 카드 놀이
+            ${!unlocked ? ' <span style="float:right;font-size:10px;">🔒 CHILD부터</span>' : ''}
+          </div>
+          <div style="font-size:11px;color:${unlocked?'#8fb39a':'#444'};margin-top:4px;">
+            21을 넘지 않게 카드를 뽑는다
+          </div>
+        </button>
+
+        <button class="mg-option ${!unlocked ? 'mg-locked' : ''}" data-game="tictactoe"
+          ${!unlocked ? 'disabled' : ''}
+          style="padding:14px;background:${unlocked?'#0a1410':'#050505'};
+          border:1px solid ${unlocked?'#e8a853':'#333'};color:${unlocked?'#e8a853':'#555'};
+          font-family:inherit;font-size:13px;cursor:${unlocked?'pointer':'not-allowed'};text-align:left;">
+          <div style="font-weight:bold;">
+            TIC-TAC-TOE · 돌 놀이
+            ${!unlocked ? ' <span style="float:right;font-size:10px;">🔒 CHILD부터</span>' : ''}
+          </div>
+          <div style="font-size:11px;color:${unlocked?'#c9a06b':'#444'};margin-top:4px;">
+            3x3 격자에 먼저 줄을 긋는다
+          </div>
+        </button>
+      </div>
+
+      <div style="margin-top:14px;font-size:10px;color:#666;text-align:center;">
+        ${reward.testMode
+          ? '◆ 테스트 모드 (무제한, 저장 안 됨)'
+          : reward.eligible
+            ? `◆ 오늘 보상 가능 (${reward.count}/${reward.limit})`
+            : `◇ 오늘 보상 끝 · 놀이만 가능`}
+      </div>
+    </div>
+  `;
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  document.getElementById('mghub-close').addEventListener('click', () => modal.remove());
+
+  // 테스트 모드 토글
+  document.getElementById('mghub-testmode')?.addEventListener('change', (e) => {
+    minigameTestMode = e.target.checked;
+    modal.remove();
+    setTimeout(showMinigameHub, 100);
+  });
+
+  // 게임 선택
+  modal.querySelectorAll('.mg-option').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.classList.contains('mg-locked')) return;
+      const game = btn.dataset.game;
+      modal.remove();
+      if (game === 'updown') showUpDownGame();
+      else if (game === 'blackjack') showBlackjackGame();
+      else if (game === 'tictactoe') showTicTacToeGame();
+    });
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// 블랙잭 (BLACKJACK)
+// ════════════════════════════════════════════════════════════
+
+const BJ_SUITS = ['♠', '♥', '♦', '♣'];
+const BJ_RANKS = [
+  { r: 'A', v: 11 }, { r: '2', v: 2 }, { r: '3', v: 3 }, { r: '4', v: 4 },
+  { r: '5', v: 5 }, { r: '6', v: 6 }, { r: '7', v: 7 }, { r: '8', v: 8 },
+  { r: '9', v: 9 }, { r: '10', v: 10 }, { r: 'J', v: 10 }, { r: 'Q', v: 10 },
+  { r: 'K', v: 10 },
+];
+
+function bjMakeDeck() {
+  const deck = [];
+  for (const s of BJ_SUITS) {
+    for (const rk of BJ_RANKS) {
+      deck.push({ suit: s, rank: rk.r, val: rk.v });
+    }
+  }
+  // 셔플
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+
+function bjHandValue(hand) {
+  let sum = hand.reduce((s, c) => s + c.val, 0);
+  let aces = hand.filter(c => c.rank === 'A').length;
+  // 에이스 값 조정 (11 → 1)
+  while (sum > 21 && aces > 0) {
+    sum -= 10;
+    aces--;
+  }
+  return sum;
+}
+
+function showBlackjackGame() {
+  if (!currentPet || currentPet.isDead) return;
+  const existing = document.getElementById('minigame-modal');
+  if (existing) existing.remove();
+
+  const state = {
+    deck: bjMakeDeck(),
+    player: [],
+    dealer: [],
+    phase: 'player',  // 'player' | 'dealer' | 'done'
+    result: null,     // 'blackjack' | 'win' | 'push' | 'lose' | 'bust'
+    hideDealer: true,
+    animating: false,
+    reward: checkMinigameRewardEligibility(),
+  };
+
+  // 초기 2장씩 배분
+  state.player.push(state.deck.pop(), state.deck.pop());
+  state.dealer.push(state.deck.pop(), state.deck.pop());
+
+  // 블랙잭 즉시 판정
+  const pv = bjHandValue(state.player);
+  const dv = bjHandValue(state.dealer);
+  if (pv === 21 && dv === 21) {
+    state.phase = 'done';
+    state.result = 'push';
+    state.hideDealer = false;
+  } else if (pv === 21) {
+    state.phase = 'done';
+    state.result = 'blackjack';
+    state.hideDealer = false;
+  } else if (dv === 21) {
+    state.phase = 'done';
+    state.result = 'lose';
+    state.hideDealer = false;
+  }
+
+  const modal = document.createElement('div');
+  modal.id = 'minigame-modal';
+  modal.className = 'talk-modal';
+  renderBlackjack(modal, state);
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  attachBlackjackHandlers(modal, state);
+
+  // 시작 즉시 블랙잭이면 보상 처리
+  if (state.phase === 'done') {
+    setTimeout(() => onBlackjackFinish(state), 400);
+  }
+}
+
+function renderBlackjack(modal, state) {
+  const pv = bjHandValue(state.player);
+  const dv = state.hideDealer
+    ? state.dealer[0].val + (state.dealer[0].rank === 'A' ? 0 : 0) // 노출된 카드만
+    : bjHandValue(state.dealer);
+
+  const isTest = isMinigameTestMode();
+
+  modal.innerHTML = `
+    <div class="talk-modal-head" style="background:#1a3d28;">
+      <span>BLACKJACK ${isTest ? '· <span style="color:#e8a853;">[TEST]</span>' : ''}</span>
+      <span class="talk-close" id="bj-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body" style="display:block;padding:14px;">
+
+      <!-- 딜러 -->
+      <div style="margin-bottom:14px;">
+        <div style="color:#8fb39a;font-size:11px;margin-bottom:6px;">
+          MARS II · ${state.hideDealer ? '?' : dv}
+        </div>
+        <div class="bj-hand" id="bj-dealer-hand" style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${state.dealer.map((c, i) => bjCardHTML(c, i === 1 && state.hideDealer)).join('')}
+        </div>
+      </div>
+
+      <!-- 구분선 -->
+      <div style="border-top:1px dotted #2d5a3e;margin:14px 0;"></div>
+
+      <!-- 플레이어 -->
+      <div style="margin-bottom:14px;">
+        <div style="color:#03B352;font-size:11px;margin-bottom:6px;">
+          ${currentUser.name} · <strong>${pv}</strong>
+          ${pv > 21 ? '<span style="color:#ff6b6b;"> · BUST</span>' : ''}
+          ${pv === 21 && state.player.length === 2 ? '<span style="color:#e8a853;"> · BLACKJACK!</span>' : ''}
+        </div>
+        <div class="bj-hand" id="bj-player-hand" style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${state.player.map(c => bjCardHTML(c)).join('')}
+        </div>
+      </div>
+
+      ${state.phase === 'done' ? bjResultBlock(state) : `
+        <div style="display:flex;gap:6px;margin-top:14px;">
+          <button id="bj-hit"
+            style="flex:1;background:#0a3818;border:1px solid #03B352;color:#03B352;
+            padding:12px;font-family:inherit;font-size:12px;cursor:pointer;">
+            [H] 히트
+          </button>
+          <button id="bj-stand"
+            style="flex:1;background:transparent;border:1px solid #e8a853;color:#e8a853;
+            padding:12px;font-family:inherit;font-size:12px;cursor:pointer;">
+            [S] 스탠드
+          </button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function bjCardHTML(card, hidden = false) {
+  if (hidden) {
+    return `<div class="bj-card bj-card-back" style="width:56px;height:78px;border:1px solid #5fb37a;background:#050a07;display:flex;align-items:center;justify-content:center;font-family:monospace;color:#2d5a3e;font-size:20px;">?</div>`;
+  }
+  const red = card.suit === '♥' || card.suit === '♦';
+  return `<div class="bj-card" style="width:56px;height:78px;border:1px solid #5fb37a;background:#fff;display:flex;flex-direction:column;justify-content:space-between;padding:4px;font-family:monospace;color:${red?'#c93030':'#000'};">
+    <div style="font-size:14px;font-weight:bold;">${card.rank}</div>
+    <div style="font-size:22px;text-align:center;">${card.suit}</div>
+    <div style="font-size:11px;text-align:right;transform:rotate(180deg);">${card.rank}</div>
+  </div>`;
+}
+
+function bjResultBlock(state) {
+  const pv = bjHandValue(state.player);
+  const dv = bjHandValue(state.dealer);
+  const resultMeta = {
+    blackjack: { label: '◆ BLACKJACK!', color: '#e8a853', bg: '#1a1505', story: 'MARS II가 입을 벌리며 환호한다.' },
+    win:       { label: '◆ 승리!',       color: '#03B352', bg: '#0a1410', story: 'MARS II가 손뼉을 친다.' },
+    push:      { label: '◇ 무승부',      color: '#8fb39a', bg: '#0a1410', story: '둘 다 고개를 끄덕인다.' },
+    lose:      { label: '◇ 패배',        color: '#8fb39a', bg: '#0a1410', story: 'MARS II가 슬쩍 미소짓는다.' },
+    bust:      { label: '✕ 버스트',      color: '#ff6b6b', bg: '#1a0505', story: '"21을 넘어갔네." MARS II가 다독인다.' },
+  };
+  const m = resultMeta[state.result] || resultMeta.push;
+
+  return `
+    <div style="padding:12px;border:1px solid ${m.color};background:${m.bg};margin-top:14px;text-align:center;">
+      <div style="color:${m.color};font-size:14px;font-weight:bold;margin-bottom:4px;">${m.label}</div>
+      <div style="color:#c9c9c9;font-size:11px;">${m.story}</div>
+      <div style="color:#666;font-size:10px;margin-top:6px;">당신 ${pv} · MARS II ${dv}</div>
+      ${state.rewardText ? `<div style="color:#c9a06b;font-size:11px;margin-top:6px;">${state.rewardText}</div>` : ''}
+      ${isMinigameTestMode() ? `<div style="color:#e8a853;font-size:10px;margin-top:4px;">[TEST · 저장 안 됨]</div>` : ''}
+    </div>
+    <div style="display:flex;gap:6px;margin-top:10px;">
+      <button id="bj-again"
+        style="flex:1;background:#0a3818;border:1px solid #03B352;color:#03B352;padding:10px;cursor:pointer;font-family:inherit;font-size:12px;">
+        다시 하기
+      </button>
+      <button id="bj-back"
+        style="flex:1;background:transparent;border:1px solid #2d5a3e;color:#8fb39a;padding:10px;cursor:pointer;font-family:inherit;font-size:12px;">
+        메뉴로
+      </button>
+    </div>
+  `;
+}
+
+function attachBlackjackHandlers(modal, state) {
+  document.getElementById('bj-close')?.addEventListener('click', () => modal.remove());
+
+  document.getElementById('bj-hit')?.addEventListener('click', async () => {
+    if (state.animating || state.phase !== 'player') return;
+    state.animating = true;
+    state.player.push(state.deck.pop());
+    const pv = bjHandValue(state.player);
+    if (pv > 21) {
+      state.phase = 'done';
+      state.result = 'bust';
+      state.hideDealer = false;
+      await onBlackjackFinish(state);
+    } else if (pv === 21) {
+      // 자동 스탠드
+      state.phase = 'dealer';
+      await bjDealerTurn(state);
+    }
+    state.animating = false;
+    renderBlackjack(modal, state);
+    attachBlackjackHandlers(modal, state);
+  });
+
+  document.getElementById('bj-stand')?.addEventListener('click', async () => {
+    if (state.animating || state.phase !== 'player') return;
+    state.animating = true;
+    state.phase = 'dealer';
+    state.hideDealer = false;
+    await bjDealerTurn(state);
+    state.animating = false;
+    renderBlackjack(modal, state);
+    attachBlackjackHandlers(modal, state);
+  });
+
+  document.getElementById('bj-again')?.addEventListener('click', () => {
+    modal.remove();
+    showBlackjackGame();
+  });
+
+  document.getElementById('bj-back')?.addEventListener('click', () => {
+    modal.remove();
+    showMinigameHub();
+  });
+}
+
+async function bjDealerTurn(state) {
+  // 딜러는 17 이상까지 히트
+  while (bjHandValue(state.dealer) < 17) {
+    await new Promise(r => setTimeout(r, 400));
+    state.dealer.push(state.deck.pop());
+  }
+  const pv = bjHandValue(state.player);
+  const dv = bjHandValue(state.dealer);
+
+  state.phase = 'done';
+  if (dv > 21 || pv > dv) state.result = 'win';
+  else if (pv === dv) state.result = 'push';
+  else state.result = 'lose';
+
+  await onBlackjackFinish(state);
+}
+
+async function onBlackjackFinish(state) {
+  const rewards = CONFIG.MINIGAME_CONFIG.BLACKJACK.REWARDS;
+  const reward = rewards[state.result];
+  if (!reward) return;
+
+  // 테스트 모드: 저장 스킵
+  if (isMinigameTestMode()) {
+    state.rewardText = `(테스트 · ${JSON.stringify(reward).slice(0, 40)}...)`;
+    return;
+  }
+
+  // 일반 모드: 보상 한도 체크
+  if (!state.reward.eligible) {
+    state.rewardText = '(오늘 보상 한도 초과)';
+    await Backend.addLog({
+      user: currentUser.name, action: 'MINIGAME',
+      text: `블랙잭 ${state.result} (보상 없음)`,
+      type: 'system',
+    });
+    return;
+  }
+
+  // 보상 적용
+  const parts = [];
+  for (const [key, val] of Object.entries(reward)) {
+    if (key === 'personality') continue;
+    if (currentPet[key] !== undefined) {
+      currentPet[key] = Math.max(0, Math.min(100, currentPet[key] + val));
+      parts.push(`${key} ${val > 0 ? '+' : ''}${val}`);
+    }
+  }
+  if (reward.personality) {
+    currentPet.personality = currentPet.personality || {};
+    for (const [axis, d] of Object.entries(reward.personality)) {
+      currentPet.personality[axis] = Math.max(-100, Math.min(100, (currentPet.personality[axis] || 0) + d));
+      const label = { activeVsCalm:d<0?'차분':'활발', socialVsIntro:d<0?'내향':'사교', greedVsTemperance:d<0?'절제':'탐욕', diligentVsFree:d<0?'자유':'성실' }[axis];
+      if (label) parts.push(`${label} ${d > 0 ? '+' : ''}${d}`);
+    }
+  }
+
+  state.rewardText = parts.join(', ');
+  await incrementMinigameCount();
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'MINIGAME',
+    text: `블랙잭 ${state.result} → ${state.rewardText}`,
+    type: 'system',
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// 틱택토 (TIC-TAC-TOE)
+// ════════════════════════════════════════════════════════════
+
+function showTicTacToeGame() {
+  if (!currentPet || currentPet.isDead) return;
+  const existing = document.getElementById('minigame-modal');
+  if (existing) existing.remove();
+
+  const state = {
+    board: [null, null, null, null, null, null, null, null, null],
+    turn: 'player',  // 'player' | 'ai' | 'done'
+    result: null,    // 'win' | 'draw' | 'lose'
+    winLine: null,
+    reward: checkMinigameRewardEligibility(),
+  };
+
+  const modal = document.createElement('div');
+  modal.id = 'minigame-modal';
+  modal.className = 'talk-modal';
+  renderTicTacToe(modal, state);
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  attachTicTacToeHandlers(modal, state);
+}
+
+function ttCheckWinner(board) {
+  const lines = [
+    [0,1,2], [3,4,5], [6,7,8],
+    [0,3,6], [1,4,7], [2,5,8],
+    [0,4,8], [2,4,6],
+  ];
+  for (const line of lines) {
+    const [a,b,c] = line;
+    if (board[a] && board[a] === board[b] && board[b] === board[c]) {
+      return { winner: board[a], line };
+    }
+  }
+  if (board.every(v => v !== null)) return { winner: 'draw', line: null };
+  return null;
+}
+
+// 간단한 minimax (완벽)
+function ttMinimax(board, aiMark, playerMark, maximizing) {
+  const res = ttCheckWinner(board);
+  if (res) {
+    if (res.winner === aiMark) return 10;
+    if (res.winner === playerMark) return -10;
+    return 0;
+  }
+  const best = maximizing ? -Infinity : Infinity;
+  let bestScore = best;
+  const mark = maximizing ? aiMark : playerMark;
+  for (let i = 0; i < 9; i++) {
+    if (board[i] === null) {
+      board[i] = mark;
+      const s = ttMinimax(board, aiMark, playerMark, !maximizing);
+      board[i] = null;
+      bestScore = maximizing ? Math.max(bestScore, s) : Math.min(bestScore, s);
+    }
+  }
+  return bestScore;
+}
+
+function ttChooseMove(board, aiMark, playerMark) {
+  const cfg = CONFIG.MINIGAME_CONFIG.TICTACTOE;
+  const empties = [];
+  for (let i = 0; i < 9; i++) if (board[i] === null) empties.push(i);
+  if (empties.length === 0) return -1;
+
+  // 확률적으로 랜덤/최적
+  if (Math.random() > cfg.AI_OPTIMAL_RATE) {
+    return empties[Math.floor(Math.random() * empties.length)];
+  }
+
+  // 최적수 탐색
+  let bestScore = -Infinity;
+  let bestMove = empties[0];
+  for (const i of empties) {
+    board[i] = aiMark;
+    const s = ttMinimax(board, aiMark, playerMark, false);
+    board[i] = null;
+    if (s > bestScore) {
+      bestScore = s;
+      bestMove = i;
+    }
+  }
+  return bestMove;
+}
+
+function renderTicTacToe(modal, state) {
+  const isTest = isMinigameTestMode();
+  const done = state.turn === 'done';
+
+  // 셀 렌더
+  const cellsHtml = state.board.map((cell, i) => {
+    const inWinLine = state.winLine && state.winLine.includes(i);
+    const color = inWinLine ? '#e8a853' : cell === 'O' ? '#03B352' : cell === 'X' ? '#5fb37a' : '#2d5a3e';
+    const bg = inWinLine ? '#1a1505' : '#050a07';
+    const clickable = !done && state.turn === 'player' && cell === null;
+    return `
+      <div class="tt-cell" data-idx="${i}"
+        style="width:60px;height:60px;border:1px solid #2d5a3e;background:${bg};
+        display:flex;align-items:center;justify-content:center;
+        font-family:monospace;font-size:28px;font-weight:bold;color:${color};
+        cursor:${clickable?'pointer':'default'};">
+        ${cell || (clickable ? `<span style="color:#333;font-size:12px;">${i+1}</span>` : '')}
+      </div>
+    `;
+  }).join('');
+
+  modal.innerHTML = `
+    <div class="talk-modal-head" style="background:#3a2a05;">
+      <span>TIC-TAC-TOE ${isTest ? '· <span style="color:#e8a853;">[TEST]</span>' : ''}</span>
+      <span class="talk-close" id="tt-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body" style="display:block;padding:14px;">
+      <div style="color:#8fb39a;font-size:11px;margin-bottom:8px;text-align:center;">
+        당신: <span style="color:#03B352;">O</span>   ·   MARS II: <span style="color:#5fb37a;">X</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3, 60px);gap:2px;justify-content:center;margin:14px 0;">
+        ${cellsHtml}
+      </div>
+
+      <div style="text-align:center;font-size:11px;color:${done?'#e8a853':'#8fb39a'};min-height:20px;">
+        ${done
+          ? (state.result === 'win' ? '◆ 당신이 이겼다! MARS II가 웃는다.'
+            : state.result === 'draw' ? '◇ 비겼다. 둘 다 고개를 끄덕인다.'
+            : '◇ MARS II가 이겼다. "한 번 더 할까?"')
+          : (state.turn === 'player' ? '▶ 당신의 차례' : '… MARS II가 생각 중')}
+      </div>
+
+      ${done ? `
+        ${state.rewardText ? `<div style="color:#c9a06b;font-size:11px;margin-top:10px;text-align:center;">${state.rewardText}</div>` : ''}
+        ${isTest ? `<div style="color:#e8a853;font-size:10px;text-align:center;margin-top:4px;">[TEST · 저장 안 됨]</div>` : ''}
+        <div style="display:flex;gap:6px;margin-top:14px;">
+          <button id="tt-again"
+            style="flex:1;background:#3a2a05;border:1px solid #e8a853;color:#e8a853;padding:10px;cursor:pointer;font-family:inherit;font-size:12px;">
+            다시 하기
+          </button>
+          <button id="tt-back"
+            style="flex:1;background:transparent;border:1px solid #2d5a3e;color:#8fb39a;padding:10px;cursor:pointer;font-family:inherit;font-size:12px;">
+            메뉴로
+          </button>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function attachTicTacToeHandlers(modal, state) {
+  document.getElementById('tt-close')?.addEventListener('click', () => modal.remove());
+
+  if (state.turn === 'player') {
+    modal.querySelectorAll('.tt-cell').forEach(cell => {
+      cell.addEventListener('click', async () => {
+        const idx = parseInt(cell.dataset.idx);
+        if (state.board[idx] !== null || state.turn !== 'player') return;
+        state.board[idx] = 'O';
+
+        // 플레이어 수로 판정
+        const r = ttCheckWinner(state.board);
+        if (r) {
+          state.turn = 'done';
+          state.winLine = r.line;
+          state.result = r.winner === 'O' ? 'win' : 'draw';
+          await onTicTacToeFinish(state);
+          renderTicTacToe(modal, state);
+          attachTicTacToeHandlers(modal, state);
+          return;
+        }
+
+        // AI 턴
+        state.turn = 'ai';
+        renderTicTacToe(modal, state);
+        attachTicTacToeHandlers(modal, state);
+
+        await new Promise(r2 => setTimeout(r2, 700));
+        const aiMove = ttChooseMove(state.board.slice(), 'X', 'O');
+        if (aiMove >= 0) {
+          state.board[aiMove] = 'X';
+        }
+        const r3 = ttCheckWinner(state.board);
+        if (r3) {
+          state.turn = 'done';
+          state.winLine = r3.line;
+          state.result = r3.winner === 'X' ? 'lose' : 'draw';
+          await onTicTacToeFinish(state);
+        } else {
+          state.turn = 'player';
+        }
+        renderTicTacToe(modal, state);
+        attachTicTacToeHandlers(modal, state);
+      });
+    });
+  }
+
+  document.getElementById('tt-again')?.addEventListener('click', () => {
+    modal.remove();
+    showTicTacToeGame();
+  });
+
+  document.getElementById('tt-back')?.addEventListener('click', () => {
+    modal.remove();
+    showMinigameHub();
+  });
+}
+
+async function onTicTacToeFinish(state) {
+  const rewards = CONFIG.MINIGAME_CONFIG.TICTACTOE.REWARDS;
+  const reward = rewards[state.result];
+  if (!reward) return;
+
+  if (isMinigameTestMode()) {
+    state.rewardText = `(테스트 · ${JSON.stringify(reward).slice(0, 40)}...)`;
+    return;
+  }
+
+  if (!state.reward.eligible) {
+    state.rewardText = '(오늘 보상 한도 초과)';
+    await Backend.addLog({
+      user: currentUser.name, action: 'MINIGAME',
+      text: `틱택토 ${state.result} (보상 없음)`,
+      type: 'system',
+    });
+    return;
+  }
+
+  const parts = [];
+  for (const [key, val] of Object.entries(reward)) {
+    if (key === 'personality') continue;
+    if (currentPet[key] !== undefined) {
+      currentPet[key] = Math.max(0, Math.min(100, currentPet[key] + val));
+      parts.push(`${key} ${val > 0 ? '+' : ''}${val}`);
+    }
+  }
+  if (reward.personality) {
+    currentPet.personality = currentPet.personality || {};
+    for (const [axis, d] of Object.entries(reward.personality)) {
+      currentPet.personality[axis] = Math.max(-100, Math.min(100, (currentPet.personality[axis] || 0) + d));
+      const label = { activeVsCalm:d<0?'차분':'활발', socialVsIntro:d<0?'내향':'사교', greedVsTemperance:d<0?'절제':'탐욕', diligentVsFree:d<0?'자유':'성실' }[axis];
+      if (label) parts.push(`${label} ${d > 0 ? '+' : ''}${d}`);
+    }
+  }
+
+  state.rewardText = parts.join(', ');
+  await incrementMinigameCount();
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'MINIGAME',
+    text: `틱택토 ${state.result} → ${state.rewardText}`,
+    type: 'system',
+  });
 }
 
 /**
@@ -4130,7 +4841,7 @@ function renderUpDownContent(state, reward) {
 
   return `
     <div class="talk-modal-head" style="background:#1a3d28;">
-      <span>🎯 MARS II와 숫자 맞추기</span>
+      <span>UP/DOWN · 숫자 맞추기 ${isMinigameTestMode() ? '· <span style="color:#e8a853;">[TEST]</span>' : ''}</span>
       <span class="talk-close" id="minigame-close">✕ 닫기</span>
     </div>
     <div class="talk-modal-body" style="display:block;padding:14px;">
@@ -4246,13 +4957,20 @@ function attachUpDownHandlers(modal, state, reward) {
  * Up/Down 게임 종료 처리
  */
 async function onUpDownFinish(state, reward) {
+  // 테스트 모드: 저장/로그 스킵
+  if (isMinigameTestMode()) {
+    state.rewardApplied = true;
+    state.rewardText = `(테스트 · 저장 안 됨)`;
+    return;
+  }
+
   // 보상 적용 여부 판단
   if (!reward.eligible) {
     state.rewardApplied = false;
     // 로그만 남김
     await Backend.addLog({
       user: currentUser.name, action: 'MINIGAME',
-      text: `🎯 숫자 맞추기 ${state.won ? '성공' : '실패'} (보상 없음)`,
+      text: `숫자 맞추기 ${state.won ? '성공' : '실패'} (보상 없음)`,
       type: 'system',
     });
     return;
@@ -4299,7 +5017,7 @@ async function onUpDownFinish(state, reward) {
   await Backend.savePet(currentPet);
   await Backend.addLog({
     user: currentUser.name, action: 'MINIGAME',
-    text: `🎯 숫자 맞추기 ${state.won ? `성공 (${triesUsed}회)` : '실패'} → ${reward_text}`,
+    text: `숫자 맞추기 ${state.won ? `성공 (${triesUsed}회)` : '실패'} → ${reward_text}`,
     type: 'system',
   });
 }

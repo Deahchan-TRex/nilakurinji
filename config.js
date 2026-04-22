@@ -5,7 +5,7 @@
 export const CONFIG = {
   // ── 앱 버전 (배포마다 올림) ───────────────────────────
   // 이 값이 바뀌면 모든 접속자가 자동 새로고침됨
-  APP_VERSION: '2026.04.22.6',
+  APP_VERSION: '2026.04.22.7',
 
   // ── 캐릭터 기본 ───────────────────────────────────────
   PET_NAME: 'MARS II',
@@ -204,7 +204,26 @@ export const CONFIG = {
     UPDOWN: {
       MIN: 1,
       MAX: 30,
-      MAX_TRIES: 7,      // 기본 시도 횟수
+      MAX_TRIES: 7,
+    },
+    // 블랙잭 (happy 중심)
+    BLACKJACK: {
+      REWARDS: {
+        blackjack:  { happy: +15, bond: +2, personality: { activeVsCalm: +2 } },
+        win:        { happy: +10, bond: +1, personality: { socialVsIntro: +2 } },
+        push:       { happy: +3, intel: +1 },
+        lose:       { happy: +1, personality: { activeVsCalm: -2, greedVsTemperance: -1 } },
+        bust:       { happy: -2, personality: { activeVsCalm: -1, greedVsTemperance: -2 } },
+      },
+    },
+    // 틱택토 (intel 중심) — CHILD/TEEN/ADULT 모두 동일 AI
+    TICTACTOE: {
+      AI_OPTIMAL_RATE: 0.65,  // 65%만 최적수 (크루가 이길 수 있게)
+      REWARDS: {
+        win:  { intel: +10, bond: +1, personality: { diligentVsFree: +2, socialVsIntro: +1 } },
+        draw: { intel: +7, personality: { activeVsCalm: -1 } },
+        lose: { intel: +3, personality: { activeVsCalm: -2 } },
+      },
     },
   },
 
