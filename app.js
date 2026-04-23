@@ -265,22 +265,6 @@ function renderMain() {
     e.target.value = '';
     handleCommand(raw);
   });
-
-  // 키보드 단축키
-  document.addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT') return;
-    const key = e.key.toLowerCase();
-    if (key === 'f') showActionSubmenu('feed');
-    else if (key === 'p') showActionSubmenu('play');
-    else if (key === 's') handleAction('sleep');
-    else if (key === 'c') handleAction('clean');
-    else if (key === 't') handleAction('train');
-    else if (key === 'l') showLore();
-    else if (key === 'k') showTalkMenu();
-    else if (key === 'n') showSignalList();
-    else if (key === 'g') showMinigameHub();
-    else if (key === 'q') showPendingQuestions();
-  });
 }
 
 // ────────────────────────────────────────────────────────────
@@ -291,28 +275,28 @@ function renderCommandButtons() {
   const adminCmds = document.getElementById('cmds-admin');
 
   mainCmds.innerHTML = `
-    <button class="cmd primary" data-act="feed">[F] FEED</button>
-    <button class="cmd primary" data-act="play">[P] PLAY</button>
-    <button class="cmd primary" data-act="sleep">[S] SLEEP</button>
-    <button class="cmd primary" data-act="clean">[C] CLEAN</button>
-    <button class="cmd primary" data-act="train">[T] TRAIN</button>
-    <button class="cmd primary" data-act="talk">[K] TALK</button>
+    <button class="cmd primary" data-act="feed">FEED</button>
+    <button class="cmd primary" data-act="play">PLAY</button>
+    <button class="cmd primary" data-act="sleep">SLEEP</button>
+    <button class="cmd primary" data-act="clean">CLEAN</button>
+    <button class="cmd primary" data-act="train">TRAIN</button>
+    <button class="cmd primary" data-act="talk">TALK</button>
   `;
 
   // 관리자가 아닐 경우: SIGNAL / UP-DOWN / PENDING / LORE / LOGOUT
   if (!currentUser.isAdmin) {
     adminCmds.innerHTML = `
-      <button class="cmd" data-act="signal" style="grid-column: span 2;">[N] SIGNAL</button>
-      <button class="cmd" data-act="minigame" style="grid-column: span 2;">[G] UP/DOWN</button>
-      <button class="cmd" data-act="pending" style="grid-column: span 2;">[Q] 말함</button>
-      <button class="cmd" data-act="lore">[L] LORE</button>
-      <button class="cmd" data-act="logout">[X] LOGOUT</button>
+      <button class="cmd" data-act="signal" style="grid-column: span 2;">SIGNAL</button>
+      <button class="cmd" data-act="minigame" style="grid-column: span 2;">UP/DOWN</button>
+      <button class="cmd" data-act="pending" style="grid-column: span 2;">말함</button>
+      <button class="cmd" data-act="lore">LORE</button>
+      <button class="cmd" data-act="logout">LOGOUT</button>
     `;
   } else {
     // 관리자일 경우: 상단 줄 (핵심 명령)
     adminCmds.innerHTML = `
-      <button class="cmd admin" data-act="reset">[R] RESET 전체</button>
-      <button class="cmd admin" data-act="edit">[E] EDIT</button>
+      <button class="cmd admin" data-act="reset">RESET 전체</button>
+      <button class="cmd admin" data-act="edit">EDIT</button>
       <button class="cmd admin" data-act="status">STATUS</button>
       <button class="cmd admin" data-act="help">HELP</button>
     `;
@@ -3906,6 +3890,14 @@ function showPendingQuestions(opts = {}) {
     if (q.answerBy === undefined || q.answerBy === null) q.answerBy = '';
     if (q.answerAt === undefined || q.answerAt === null) q.answerAt = 0;
   }
+
+  // OBJECT용 디버그 출력 (누락된 항목 추적)
+  if (currentUser?.isAdmin) {
+    console.log('[pending] 전체', all.length, '개 · pendingQuestions:', all);
+    console.log('[pending] 답 안 된:', all.filter(q => !q.answered).length, '개');
+    console.log('[pending] 답한:', all.filter(q => q.answered).length, '개');
+  }
+
   const unanswered = all.filter(q => !q.answered);
   const answered = all.filter(q => q.answered);
 
@@ -4159,24 +4151,10 @@ function showAnsweredDetail(q) {
 // ════════════════════════════════════════════════════════════
 
 /**
- * 오늘 보상 가능 횟수 체크
+ * 오늘 보상 가능 횟수 체크 (제한 없음 · 항상 보상)
  */
 function checkMinigameRewardEligibility() {
-  // 테스트 모드: 항상 eligible, 카운트는 "테스트" 라벨
-  if (isMinigameTestMode()) {
-    return { eligible: true, count: 0, limit: CONFIG.MINIGAME_CONFIG.DAILY_REWARD_LIMIT, testMode: true };
-  }
-  const now = new Date();
-  const dayKey = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
-  const mg = currentPet.minigameToday;
-  if (!mg || mg.dayKey !== dayKey) {
-    return { eligible: true, count: 0, limit: CONFIG.MINIGAME_CONFIG.DAILY_REWARD_LIMIT };
-  }
-  return {
-    eligible: mg.count < CONFIG.MINIGAME_CONFIG.DAILY_REWARD_LIMIT,
-    count: mg.count,
-    limit: CONFIG.MINIGAME_CONFIG.DAILY_REWARD_LIMIT,
-  };
+  return { eligible: true, count: 0, limit: 999, testMode: isMinigameTestMode() };
 }
 
 /**
@@ -4293,10 +4271,8 @@ function showMinigameHub() {
 
       <div style="margin-top:14px;font-size:10px;color:#666;text-align:center;">
         ${reward.testMode
-          ? '◆ 테스트 모드 (무제한, 저장 안 됨)'
-          : reward.eligible
-            ? `◆ 오늘 보상 가능 (${reward.count}/${reward.limit})`
-            : `◇ 오늘 보상 끝 · 놀이만 가능`}
+          ? '◆ 테스트 모드 (저장 안 됨)'
+          : '◆ 보상 제한 없음'}
       </div>
     </div>
   `;
@@ -4933,9 +4909,9 @@ function showUpDownGame() {
 
 function renderUpDownContent(state, reward) {
   const remaining = state.maxTries - state.tries;
-  const rewardText = reward.eligible
-    ? `◆ 오늘 보상 가능 (${reward.count}/${reward.limit})`
-    : `◇ 오늘 보상 끝 · 놀이 기록은 남음`;
+  const rewardText = isMinigameTestMode()
+    ? '◆ 테스트 모드 (저장 안 됨)'
+    : '◆ 보상 제한 없음';
 
   return `
     <div class="talk-modal-head" style="background:#1a3d28;">
@@ -5074,39 +5050,39 @@ async function onUpDownFinish(state, reward) {
     return;
   }
 
-  // 보상 계산
-  // 승리: 시도 횟수 적을수록 보상↑ / 실패: 적은 보상
+  // 보상 계산 (성격 변화 폭 큼)
+  // 승리 = 오른쪽 성격 강화, 패배 = 왼쪽 성격 전환
   let reward_text = '';
   const triesUsed = state.tries;
+  currentPet.personality = currentPet.personality || {};
   if (state.won) {
     if (triesUsed <= 3) {
       // 빠른 승리
       currentPet.happy = Math.min(100, currentPet.happy + 10);
       currentPet.bond = Math.min(100, (currentPet.bond || 0) + 2);
-      currentPet.personality = currentPet.personality || {};
-      currentPet.personality.socialVsIntro = Math.min(100, (currentPet.personality.socialVsIntro || 0) + 2);
-      reward_text = `happy +10, bond +2, 사교 +2`;
+      currentPet.personality.socialVsIntro = Math.min(100, (currentPet.personality.socialVsIntro || 0) + 3);
+      currentPet.personality.activeVsCalm = Math.min(100, (currentPet.personality.activeVsCalm || 0) + 3);
+      reward_text = `happy +10, bond +2, 사교 +3, 활발 +3`;
     } else if (triesUsed <= 5) {
       // 보통 승리
       currentPet.happy = Math.min(100, currentPet.happy + 7);
       currentPet.bond = Math.min(100, (currentPet.bond || 0) + 1);
-      currentPet.personality = currentPet.personality || {};
-      currentPet.personality.diligentVsFree = Math.min(100, (currentPet.personality.diligentVsFree || 0) + 1);
-      reward_text = `happy +7, bond +1, 성실 +1`;
+      currentPet.personality.diligentVsFree = Math.min(100, (currentPet.personality.diligentVsFree || 0) + 3);
+      reward_text = `happy +7, bond +1, 성실 +3`;
     } else {
-      // 늦은 승리
+      // 늦은 승리 (아슬아슬) → 차분으로 크게 전환
       currentPet.happy = Math.min(100, currentPet.happy + 5);
-      currentPet.personality = currentPet.personality || {};
-      currentPet.personality.activeVsCalm = Math.max(-100, (currentPet.personality.activeVsCalm || 0) - 1);
-      reward_text = `happy +5, 차분 +1`;
+      currentPet.personality.activeVsCalm = Math.max(-100, (currentPet.personality.activeVsCalm || 0) - 4);
+      currentPet.personality.diligentVsFree = Math.min(100, (currentPet.personality.diligentVsFree || 0) + 2);
+      reward_text = `happy +5, 차분 +4, 성실 +2`;
     }
   } else {
-    // 실패 보상 (작음, 차분한 성격 부여)
+    // 실패: 왼쪽 성격으로 크게 전환 (반성/차분/절제)
     currentPet.happy = Math.min(100, currentPet.happy + 3);
-    currentPet.personality = currentPet.personality || {};
-    currentPet.personality.activeVsCalm = Math.max(-100, (currentPet.personality.activeVsCalm || 0) - 2);
-    currentPet.personality.greedVsTemperance = Math.max(-100, (currentPet.personality.greedVsTemperance || 0) - 1);
-    reward_text = `happy +3, 차분 +2, 절제 +1`;
+    currentPet.personality.activeVsCalm = Math.max(-100, (currentPet.personality.activeVsCalm || 0) - 5);
+    currentPet.personality.greedVsTemperance = Math.max(-100, (currentPet.personality.greedVsTemperance || 0) - 4);
+    currentPet.personality.socialVsIntro = Math.max(-100, (currentPet.personality.socialVsIntro || 0) - 2);
+    reward_text = `happy +3, 차분 +5, 절제 +4, 내향 +2`;
   }
 
   await incrementMinigameCount();
