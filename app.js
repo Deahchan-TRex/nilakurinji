@@ -21,7 +21,7 @@ import {
   recordMemorableQuote, getQuoteRecall, getEggMessageRecall,
   getNextTopicChoices, getTopicBridge,
   matchGreeting, getGreetingResponse,
-  pickBubbleSpeech, pickTapSpeech,
+  pickBubbleSpeech, pickTapSpeech, pickTeenAngrySpeech,
   getSignalRecall, getLullabyRecall,
 } from './speeches.js';
 
@@ -76,7 +76,7 @@ function renderLogin() {
 │                                             │
 │     C A L L A - L I L Y    M A N I F E S T  │
 │          CREW ACCESS TERMINAL v2.4          │
-│        2026.03 INTAKE — MARS II          │
+│         2026.03 INTAKE - MARS II            │
 │                                             │
 └─────────────────────────────────────────────┘</pre>
         <h1>칼라릴리호 · 관리 단말</h1>
@@ -286,15 +286,27 @@ function renderCommandButtons() {
     <button class="cmd primary" data-act="talk">TALK</button>
   `;
 
-  // 관리자가 아닐 경우: SIGNAL / UP-DOWN / PENDING / LORE / LOGOUT
+  // 관리자가 아닐 경우: SIGNAL / GAME / PENDING / LORE(TEEN 이전만) / LOGOUT
   if (!currentUser.isAdmin) {
-    adminCmds.innerHTML = `
-      <button class="cmd" data-act="signal" style="grid-column: span 2;">SIGNAL</button>
-      <button class="cmd" data-act="minigame" style="grid-column: span 2;">UP/DOWN</button>
-      <button class="cmd" data-act="pending" style="grid-column: span 2;">말함</button>
-      <button class="cmd" data-act="lore">LORE</button>
-      <button class="cmd" data-act="logout">LOGOUT</button>
-    `;
+    const stage = currentPet?.stage;
+    const showLore = (stage !== 'TEEN' && stage !== 'ADULT');
+    if (showLore) {
+      adminCmds.innerHTML = `
+        <button class="cmd" data-act="signal" style="grid-column: span 2;">SIGNAL</button>
+        <button class="cmd" data-act="minigame" style="grid-column: span 2;">GAME</button>
+        <button class="cmd" data-act="pending" style="grid-column: span 2;">말함</button>
+        <button class="cmd" data-act="lore">LORE</button>
+        <button class="cmd" data-act="logout">LOGOUT</button>
+      `;
+    } else {
+      // TEEN/ADULT: LORE 제거
+      adminCmds.innerHTML = `
+        <button class="cmd" data-act="signal" style="grid-column: span 2;">SIGNAL</button>
+        <button class="cmd" data-act="minigame" style="grid-column: span 2;">GAME</button>
+        <button class="cmd" data-act="pending">말함</button>
+        <button class="cmd" data-act="logout">LOGOUT</button>
+      `;
+    }
   } else {
     // 관리자일 경우: 상단 줄 (핵심 명령)
     adminCmds.innerHTML = `
@@ -368,7 +380,7 @@ function renderCommandButtons() {
         buttons: `
           <button class="cmd admin" data-act="signal-admin">📡 신호 제어</button>
           <button class="cmd admin" data-act="finale">⭐ FINALE</button>
-          <button class="cmd admin" data-act="minigame">🎯 UP/DOWN</button>
+          <button class="cmd admin" data-act="minigame">🎯 GAME</button>
           <button class="cmd admin" data-act="pending">💭 말함</button>
           <button class="cmd admin" data-act="radio-test">📻 라디오 테스트</button>
         `,
@@ -798,7 +810,11 @@ function render() {
     `DAY ${String(progress.day).padStart(2,'0')} · ${progress.hoursLived}h`;
 
   // 캐릭터 아트 (표정 동적)
-  document.getElementById('pet-art').textContent = renderTeddy(currentPet);
+  // 팔 벌리기 중에는 덮어쓰지 않음 (pet-hug 클래스로 판정)
+  const petArtEl = document.getElementById('pet-art');
+  if (!petArtEl.classList.contains('pet-hug')) {
+    petArtEl.textContent = renderTeddy(currentPet);
+  }
   document.getElementById('stage-badge').textContent = currentPet.stage;
   // 탭 리스너 유지 (DOM이 바뀌었을 수도 있으니 확인)
   attachPetTapListener();
@@ -1306,13 +1322,17 @@ function startBlinking() {
     if (!currentPet || currentPet.isDead || currentPet.stage === 'EGG') return;
     const petArt = document.getElementById('pet-art');
     if (!petArt) return;
+    // 팔 벌리기 중이면 깜빡이지 않음
+    if (petArt.classList.contains('pet-hug')) return;
 
     // 깜빡임 한 번
     petArt.textContent = renderTeddyBlink(currentPet);
     setTimeout(() => {
       if (!currentPet) return;
       const art = document.getElementById('pet-art');
-      if (art) art.textContent = renderTeddy(currentPet);
+      if (art && !art.classList.contains('pet-hug')) {
+        art.textContent = renderTeddy(currentPet);
+      }
     }, 150);
   };
 
@@ -1379,6 +1399,10 @@ function startBubbleTimer() {
 // ASCII 캐릭터 클릭 시 대사 표시
 // ────────────────────────────────────────────────────────────
 let lastTapAt = 0;
+// TEEN 연속 탭 카운트 (30초 내 연속 탭하면 화냄)
+let tapStreakCount = 0;
+let tapStreakWindowStart = 0;
+
 function handlePetTap() {
   if (!currentPet || currentPet.isDead) return;
 
@@ -1387,9 +1411,24 @@ function handlePetTap() {
   if (now - lastTapAt < 4000) return;
   lastTapAt = now;
 
-  // 팔 벌리기 애니메이션 (4초, 오래 유지)
+  // TEEN/ADULT에서 연속 탭 체크 (30초 윈도우)
+  const STREAK_WINDOW = 30 * 1000;
+  const ANGRY_THRESHOLD = 3;  // 30초 내 3번 탭하면 화냄
+  const isAngryStage = (currentPet.stage === 'TEEN');  // TEEN만 (ADULT는 무던)
+
+  if (now - tapStreakWindowStart > STREAK_WINDOW) {
+    // 윈도우 리셋
+    tapStreakWindowStart = now;
+    tapStreakCount = 1;
+  } else {
+    tapStreakCount++;
+  }
+
+  const isAngry = isAngryStage && tapStreakCount >= ANGRY_THRESHOLD;
+
+  // 팔 벌리기 애니메이션 (4초) - 화내는 경우는 생략
   const petArt = document.getElementById('pet-art');
-  if (petArt && currentPet.stage !== 'EGG') {
+  if (petArt && currentPet.stage !== 'EGG' && !isAngry) {
     petArt.textContent = renderTeddyHug(currentPet);
     petArt.classList.add('pet-hug');
     setTimeout(() => {
@@ -1401,11 +1440,33 @@ function handlePetTap() {
   }
 
   const { fav, least } = getCrewFavorites(currentPet);
-  const speech = pickTapSpeech(currentPet, {
-    user: currentUser.name,
-    name: currentPet.name,
-    fav, least,
-  });
+
+  // 화난 경우 화난 대사 + 성격 변화
+  let speech;
+  if (isAngry) {
+    speech = pickTeenAngrySpeech({ user: currentUser.name, name: currentPet.name });
+    // 화내는 성격 영향
+    currentPet.personality = currentPet.personality || {};
+    currentPet.personality.activeVsCalm = Math.min(100,
+      (currentPet.personality.activeVsCalm || 0) + 2);  // 공격적
+    currentPet.personality.socialVsIntro = Math.max(-100,
+      (currentPet.personality.socialVsIntro || 0) - 3);  // 내향
+    currentPet.happy = Math.max(0, currentPet.happy - 3);
+    currentPet.bond = Math.max(0, (currentPet.bond || 0) - 1);
+    // 화난 이모티콘
+    showEmote('angry');
+  } else {
+    speech = pickTapSpeech(currentPet, {
+      user: currentUser.name, name: currentPet.name, fav, least,
+    });
+    // 가벼운 반응 이모티콘
+    const tapEmotes = ['heart2', 'sparkle', 'note', 'bubble'];
+    const picked = tapEmotes[Math.floor(Math.random() * tapEmotes.length)];
+    showEmote(picked);
+    // 아주 가벼운 부가 스탯 (값 폭주 방지)
+    currentPet.bond = Math.min(100, (currentPet.bond || 0) + 0.05);
+    currentPet.intel = Math.min(100, (currentPet.intel || 0) + 0.03);
+  }
 
   if (speech) {
     saveSpeechForUser(currentPet, currentUser.name, {
@@ -1413,15 +1474,6 @@ function handlePetTap() {
     });
     Backend.savePet(currentPet);
   }
-
-  // 가벼운 반응 이모티콘
-  const tapEmotes = ['heart2', 'sparkle', 'note', 'bubble'];
-  const picked = tapEmotes[Math.floor(Math.random() * tapEmotes.length)];
-  showEmote(picked);
-
-  // 아주 가벼운 부가 스탯 (값 폭주 방지)
-  currentPet.bond = Math.min(100, (currentPet.bond || 0) + 0.05);
-  currentPet.intel = Math.min(100, (currentPet.intel || 0) + 0.03);
 }
 
 function attachPetTapListener() {
@@ -3020,6 +3072,76 @@ function showSignalDetail(signalId) {
   }
 
   attachSignalDetailHandlers(modal, signalId);
+
+  // 이미 진행 중이거나 해독 완료된 신호는 스크램블 애니메이션
+  // (처음 여는 신호는 text가 없거나 간단하므로 스킵)
+  const textBox = modal.querySelector('#signal-text-box');
+  const finalText = textBox?.dataset.finalText || '';
+  if (textBox && finalText && finalText !== '(아직 신호를 열지 않았습니다)' && info.percent > 0) {
+    runSignalScrambleEffect(textBox, finalText);
+  }
+}
+
+/**
+ * 신호 본문 스크램블 연출
+ * - 0~1.5초: 노이즈 문자만
+ * - 1.5~3.5초: 서서히 본문으로 수렴
+ * - 3.5초 이후: 완성된 본문
+ */
+function runSignalScrambleEffect(el, finalText) {
+  const NOISE_CHARS = '▓▒░█▬▪▫◆◇○●※◈▦▩⌘⌗⍰⍟⌇⎌⏃';
+  const TOTAL_MS = 3500;
+  const NOISE_ONLY_MS = 1500;
+  const startAt = performance.now();
+
+  function randomNoiseLine(length) {
+    let s = '';
+    for (let i = 0; i < length; i++) {
+      s += NOISE_CHARS[Math.floor(Math.random() * NOISE_CHARS.length)];
+    }
+    return s;
+  }
+
+  function randomNoiseMatching(finalText) {
+    // finalText 길이만큼 노이즈, 단 줄바꿈/공백은 보존
+    let result = '';
+    for (const ch of finalText) {
+      if (ch === '\n' || ch === ' ') result += ch;
+      else result += NOISE_CHARS[Math.floor(Math.random() * NOISE_CHARS.length)];
+    }
+    return result;
+  }
+
+  let frame = 0;
+  function step() {
+    frame++;
+    const elapsed = performance.now() - startAt;
+    if (elapsed >= TOTAL_MS) {
+      el.textContent = finalText;
+      return;
+    }
+
+    if (elapsed < NOISE_ONLY_MS) {
+      // 완전 노이즈
+      el.textContent = randomNoiseMatching(finalText);
+    } else {
+      // 점진적으로 본문으로 수렴
+      const progress = (elapsed - NOISE_ONLY_MS) / (TOTAL_MS - NOISE_ONLY_MS);
+      let result = '';
+      for (const ch of finalText) {
+        if (ch === '\n' || ch === ' ') {
+          result += ch;
+        } else if (Math.random() < progress) {
+          result += ch;  // 본문 문자
+        } else {
+          result += NOISE_CHARS[Math.floor(Math.random() * NOISE_CHARS.length)];
+        }
+      }
+      el.textContent = result;
+    }
+    requestAnimationFrame(step);
+  }
+  step();
 }
 
 function renderSignalDetailContent(info) {
@@ -3099,9 +3221,9 @@ function renderSignalDetailContent(info) {
         <span style="color:${isComplete ? '#e8a853' : '#03B352'};min-width:36px;">${percent}%</span>
       </div>
 
-      <div style="background:#050a07;border:1px dotted #2d5a3e;padding:14px;font-size:13px;line-height:1.7;letter-spacing:0.5px;min-height:80px;white-space:pre-wrap;${isComplete ? 'color:#e8a853;' : 'color:#03B352;'}">
-${text || '(아직 신호를 열지 않았습니다)'}
-      </div>
+      <div id="signal-text-box" class="signal-text-box"
+        data-final-text="${(text || '').replace(/"/g, '&quot;')}"
+        style="background:#050a07;border:1px dotted #2d5a3e;padding:14px;font-size:13px;line-height:1.7;letter-spacing:0.5px;min-height:80px;white-space:pre-wrap;${isComplete ? 'color:#e8a853;' : 'color:#03B352;'}">${text || '(아직 신호를 열지 않았습니다)'}</div>
 
       ${progressHtml}
       ${warningHtml}
@@ -4400,6 +4522,11 @@ async function incrementMinigameCount() {
  * minigameTestMode와 별도 (게임과 구분)
  */
 let radioTestMode = false;
+/**
+ * 테스트 모드에서 현재 활성 이벤트 (pet.radioSchedule과 별개)
+ * 팝업 닫아도 유지되어 아이콘 재오픈 테스트 가능
+ */
+let radioTestActiveEvent = null;
 
 function isRadioTestMode() {
   return currentUser?.isAdmin && radioTestMode;
@@ -4667,15 +4794,12 @@ function attachRadioHandlers(modal, state, event, channel) {
   const confirmBtn = modal.querySelector('#radio-confirm');
 
   // 닫기 = 최소화 (저장 안 됨, 아이콘만 남김)
+  // 테스트 모드에서도 radioTestMode 유지 → 아이콘 표시 → 클릭 재오픈 가능
   closeBtn?.addEventListener('click', () => {
     modal.remove();
     currentRadioPopup = null;
     stopRadioNoise();
-    // 테스트 모드는 팝업 닫으면 해제 (아이콘 안 남김)
-    if (radioTestMode) {
-      radioTestMode = false;
-    }
-    // 아이콘은 render()에서 자동 표시 (findActiveRadioEvent에 걸림)
+    // 아이콘은 render()에서 자동 표시
     render();
   });
 
@@ -4773,7 +4897,11 @@ async function onRadioMatched(state, event, channel, modal) {
     `;
     modal.querySelector('#radio-close-after')?.addEventListener('click', () => {
       modal.remove();
-      if (radioTestMode) radioTestMode = false;
+      // 매칭 성공 후 닫기 = 테스트 종료 (이벤트도 지움, 아이콘 안 남음)
+      if (radioTestMode) {
+        radioTestMode = false;
+        radioTestActiveEvent = null;
+      }
       render();
     });
   }
@@ -4803,26 +4931,47 @@ async function onRadioMatched(state, event, channel, modal) {
  * render()에서 호출됨
  */
 function renderRadioIcon() {
-  if (isRadioTestMode()) return;  // 테스트 모드는 스케줄 기반 아이콘 숨김 (직접 호출만)
   const container = document.getElementById('radio-icon-slot');
   if (!container) return;
-  const ev = findActiveRadioEvent();
+
+  // 테스트 모드: 전역 테스트 이벤트 우선
+  let ev;
+  if (isRadioTestMode() && radioTestActiveEvent) {
+    ev = radioTestActiveEvent;
+  } else if (!isRadioTestMode()) {
+    ev = findActiveRadioEvent();
+  }
+
   if (!ev || currentRadioPopup === ev.scheduledAt) {
     container.innerHTML = '';
     return;
   }
   container.innerHTML = `
-    <div class="radio-icon-wrapper" id="radio-icon-wrapper" title="주파수 신호 감지됨 (클릭)">
+    <div class="radio-icon-wrapper" id="radio-icon-wrapper"
+      title="주파수 신호 감지됨 (클릭)${isRadioTestMode() ? ' · 우클릭으로 테스트 종료' : ''}">
       <div class="radio-wave r1"></div>
       <div class="radio-wave r2"></div>
       <div class="radio-wave r3"></div>
       <div class="radio-core"></div>
     </div>
   `;
-  document.getElementById('radio-icon-wrapper')?.addEventListener('click', () => {
-    const activeEv = findActiveRadioEvent();
+  const iconEl = document.getElementById('radio-icon-wrapper');
+  iconEl?.addEventListener('click', () => {
+    const activeEv = (isRadioTestMode() && radioTestActiveEvent)
+      ? radioTestActiveEvent
+      : findActiveRadioEvent();
     if (activeEv) openRadioPopup(activeEv);
   });
+  // 테스트 모드: 우클릭으로 테스트 종료
+  if (isRadioTestMode()) {
+    iconEl?.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      radioTestMode = false;
+      radioTestActiveEvent = null;
+      render();
+      showToast('테스트 모드 종료', 'system');
+    });
+  }
 }
 
 /**
@@ -4875,6 +5024,7 @@ function testRadioPopup() {
     matched: false,
     missed: false,
   };
+  radioTestActiveEvent = fakeEvent;  // 전역 보관 (아이콘에서 참조)
   openRadioPopup(fakeEvent);
   console.log('[radio] 테스트 팝업 - 정답 주파수:', freq, '/ 채널:', channel.label);
 }

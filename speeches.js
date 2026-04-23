@@ -1658,6 +1658,27 @@ const TAP_SPEECHES = {
   ],
 };
 
+// TEEN 단계에서 연속 탭할 때 나오는 화난 대사
+const TEEN_ANGRY_SPEECHES = [
+  '그만 좀 해.',
+  '...짜증 나.',
+  '계속 찔러대지 마.',
+  '{user}, 진짜 뭐야?',
+  '나 좀 내버려 둘래?',
+  '왜 자꾸 이래.',
+  '숨 막혀.',
+  '...저리 가.',
+  '그게 재밌어?',
+  '진심으로 하지 마.',
+];
+
+export function pickTeenAngrySpeech(vars = {}) {
+  const raw = TEEN_ANGRY_SPEECHES[Math.floor(Math.random() * TEEN_ANGRY_SPEECHES.length)];
+  return raw
+    .replace(/\{user\}/g, vars.user || '너')
+    .replace(/\{name\}/g, vars.name || 'MARS II');
+}
+
 export function pickTapSpeech(pet, vars = {}) {
   const pool = TAP_SPEECHES[pet.stage] || TAP_SPEECHES.BABY;
   const raw = pool[Math.floor(Math.random() * pool.length)];

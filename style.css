@@ -1315,3 +1315,11 @@ body {
 .admin-group-body .cmds {
   margin: 0;
 }
+
+/* ──────────────────────────────────────
+   신호 본문 스크램블 연출용
+   ────────────────────────────────────── */
+.signal-text-box {
+  font-family: 'Courier New', monospace;
+  position: relative;
+}
