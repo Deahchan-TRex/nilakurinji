@@ -3907,6 +3907,16 @@ function showPendingQuestions(opts = {}) {
         ${currentPet.stage === 'BABY' ? '<br><span style="color:#e8a853;">(BABY가 아직 말을 못 해서 묵혀 있던 말들도 있어.)</span>' : ''}
       </div>
 
+      ${currentUser.isAdmin ? `
+        <div style="margin-bottom:10px;">
+          <button id="pending-show-msg-log"
+            style="width:100%;background:transparent;border:1px dotted #8fb39a;color:#8fb39a;
+            padding:6px;font-family:inherit;font-size:11px;cursor:pointer;">
+            ▶ MSG 로그에서 누락된 질문 찾기
+          </button>
+        </div>
+      ` : ''}
+
       ${unanswered.length === 0 ? `
         <div style="color:#666;font-size:12px;text-align:center;padding:20px 0;">
           아직 답 기다리는 말이 없어.
@@ -4009,6 +4019,11 @@ function showPendingQuestions(opts = {}) {
 
   document.getElementById('pending-close').addEventListener('click', () => modal.remove());
 
+  // MSG 로그 조회 (관리자 전용)
+  document.getElementById('pending-show-msg-log')?.addEventListener('click', () => {
+    showMsgLogAudit();
+  });
+
   modal.querySelectorAll('.pending-answer').forEach(btn => {
     btn.addEventListener('click', async () => {
       const idx = parseInt(btn.dataset.idx);
@@ -4022,17 +4037,16 @@ function showPendingQuestions(opts = {}) {
       const trimmed = answer.trim().slice(0, 100);
 
       try {
-        // 유저명 + 시각으로 고유 식별 (인덱스는 동시 편집으로 어긋날 수 있음)
         const questionId = `${q.user}_${q.at}`;
         const speechText = `${q.user}, "${q.text}"... ${trimmed}`;
 
-        // 트랜잭션 하나로 답변 + 개인 대사 모두 원자적 처리
+        // 질문 식별 정보를 더 풍부하게 전달 (text도 fallback 용)
         const result = await Backend.answerPendingQuestion(
-          questionId, trimmed, currentUser.name, speechText
+          questionId, trimmed, currentUser.name, speechText, { user: q.user, text: q.text }
         );
 
         if (!result?.found) {
-          showToast(`⚠ 대상 질문을 찾을 수 없습니다 (이미 답변되었을 수 있음)`, 'warn');
+          showToast(`⚠ 대상 질문을 찾을 수 없습니다 (F12 콘솔 로그 확인)`, 'warn');
           modal.remove();
           setTimeout(() => showPendingQuestions({ unansweredPage, answeredPage }), 200);
           return;
@@ -4067,12 +4081,11 @@ function showPendingQuestions(opts = {}) {
 
       try {
         const questionId = `${q.user}_${q.at}`;
-        // 완료 표시만 (speech 전달 안 함 = 대사 안 띄움)
         const result = await Backend.answerPendingQuestion(
-          questionId, trimmed, currentUser.name, null
+          questionId, trimmed, currentUser.name, null, { user: q.user, text: q.text }
         );
         if (!result?.found) {
-          showToast(`⚠ 대상 질문을 찾을 수 없습니다`, 'warn');
+          showToast(`⚠ 대상 질문을 찾을 수 없습니다 (F12 콘솔 로그 확인)`, 'warn');
           modal.remove();
           setTimeout(() => showPendingQuestions({ unansweredPage, answeredPage }), 200);
           return;
@@ -4130,6 +4143,107 @@ function showPendingQuestions(opts = {}) {
       }, 50);
     });
   });
+}
+
+/**
+ * MSG 로그 감사 - 펜딩 질문과 로그를 비교해서 누락 항목 찾기
+ */
+function showMsgLogAudit() {
+  if (!currentUser?.isAdmin) return;
+  const existing = document.getElementById('msg-audit-modal');
+  if (existing) { existing.remove(); return; }
+
+  const msgLogs = (logs || []).filter(l => l.action === 'MSG');
+  const pending = currentPet.pendingQuestions || [];
+
+  // 로그와 펜딩을 비교: 로그엔 있는데 펜딩엔 없는 것 찾기
+  const missingOnes = [];
+  for (const log of msgLogs) {
+    // 로그 텍스트 예: `◎ "네 첫 기억이 뭐야?" 남김`
+    const m = log.text?.match(/"([^"]+)"/);
+    if (!m) continue;
+    const logText = m[1];  // 30자 잘린 상태
+    const user = log.user;
+    // 펜딩에 같은 user + text 시작이 같은 것 있는지
+    const found = pending.some(q =>
+      q.user === user && q.text.startsWith(logText.replace(/\.\.\.$/, ''))
+    );
+    if (!found) {
+      missingOnes.push({ ...log, logText });
+    }
+  }
+
+  const modal = document.createElement('div');
+  modal.id = 'msg-audit-modal';
+  modal.className = 'talk-modal';
+  modal.innerHTML = `
+    <div class="talk-modal-head" style="background:#3a2a05;">
+      <span>MSG 로그 감사 (최근 ${msgLogs.length}건)</span>
+      <span class="talk-close" id="msg-audit-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body" style="display:block;padding:14px;">
+      <div style="color:#8fb39a;font-size:11px;margin-bottom:12px;line-height:1.6;">
+        로그에 남아있는 MSG 기록과 현재 펜딩 목록을 비교합니다.
+        로그엔 있는데 펜딩에 없는 항목 = <span style="color:#e8a853;">누락된 질문</span>
+      </div>
+
+      ${missingOnes.length > 0 ? `
+        <div style="border:1px solid #e8a853;background:#1a1505;padding:10px;margin-bottom:14px;">
+          <div style="color:#e8a853;font-size:12px;font-weight:bold;margin-bottom:8px;">
+            ⚠ 누락된 질문 ${missingOnes.length}개
+          </div>
+          ${missingOnes.map(log => {
+            const time = new Date(log.atMs).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
+            return `
+              <div style="padding:8px 10px;margin-bottom:6px;background:#0a0a05;border:1px dotted #c9a06b;font-size:11px;line-height:1.6;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                  <span style="color:#e8a853;font-weight:bold;">${log.user}</span>
+                  <span style="color:#666;font-size:10px;">${time}</span>
+                </div>
+                <div style="color:#c9c9c9;">"${(log.logText || '').replace(/</g, '&lt;')}"</div>
+                <div style="color:#c97d5f;font-size:10px;margin-top:4px;">
+                  → 펜딩 목록에 없음 (저장 실패 또는 삭제됨)
+                </div>
+              </div>
+            `;
+          }).join('')}
+          <div style="color:#c9a06b;font-size:10px;margin-top:8px;line-height:1.5;">
+            복원하려면: 이 텍스트를 기억해두고 해당 크루에게 다시 질문하도록 요청하거나<br>
+            관리자가 "말함" 패널에서 수동으로 기록.
+          </div>
+        </div>
+      ` : `
+        <div style="color:#03B352;font-size:12px;text-align:center;padding:16px 0;border:1px solid #03B352;background:#0a1410;margin-bottom:14px;">
+          ✓ 누락된 질문 없음 · 로그와 펜딩이 일치합니다
+        </div>
+      `}
+
+      <div style="color:#8fb39a;font-size:11px;font-weight:bold;margin-bottom:6px;">
+        ◢ 전체 MSG 로그 (${msgLogs.length}건)
+      </div>
+      ${msgLogs.length === 0 ? `
+        <div style="color:#666;font-size:11px;text-align:center;padding:12px 0;">
+          로그가 없습니다 (최근 100개만 조회됨)
+        </div>
+      ` : msgLogs.slice().reverse().map(log => {
+        const time = new Date(log.atMs).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
+        return `
+          <div style="padding:6px 10px;margin-bottom:4px;background:#050a07;border:1px dotted #2d5a3e;font-size:11px;line-height:1.5;">
+            <span style="color:#8fb39a;">${time}</span> ·
+            <span style="color:#5fb37a;font-weight:bold;">${log.user}</span> ·
+            <span style="color:#c9c9c9;">${(log.text || '').replace(/</g, '&lt;')}</span>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  document.getElementById('msg-audit-close').addEventListener('click', () => modal.remove());
 }
 
 /**
