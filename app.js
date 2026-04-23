@@ -1522,14 +1522,8 @@ function showTalkMenu() {
   const existing = document.getElementById('talk-modal');
   if (existing) { existing.remove(); return; }
 
-  // 오늘의 대화 세션 초기화/확인
+  // 오늘의 대화 세션 초기화/확인 (제한 없이)
   initDailyTalk(currentPet);
-  const dt = currentPet.dailyTalk;
-
-  if (dt.turnsLeft <= 0) {
-    appendSystemLog('💬 오늘은 이미 충분히 이야기했어. 내일 또 만나.', 'system');
-    return;
-  }
 
   renderTalkMenu();
 }
@@ -1676,7 +1670,7 @@ function renderTalkMenu() {
     headText = '이야기를 이어갈까?';
   }
 
-  if (topicCandidates.length === 0 || dt.turnsLeft <= 0) {
+  if (topicCandidates.length === 0) {
     closeTalkSession();
     return;
   }
@@ -1741,7 +1735,7 @@ async function closeTalkSession() {
 async function handleTalk(topicKey) {
   if (!currentPet || currentPet.isDead) return;
   const dt = currentPet.dailyTalk;
-  if (!dt || dt.turnsLeft <= 0) return;
+  if (!dt) return;
 
   const { fav, least } = getCrewFavorites(currentPet);
   const vars = {
@@ -1798,7 +1792,6 @@ async function handleTalk(topicKey) {
   // 세션 진행
   dt.usedTopics.push(topicKey);
   dt.lastTopic = topicKey;
-  dt.turnsLeft -= 1;
 
   await Backend.savePet(currentPet);
   await Backend.addLog({
@@ -1818,11 +1811,7 @@ async function handleTalk(topicKey) {
   }
 
   setTimeout(() => {
-    if (dt.turnsLeft > 0) {
-      renderTalkMenu();
-    } else {
-      closeTalkSession();
-    }
+    renderTalkMenu();
   }, 1800);
 }
 
@@ -3941,6 +3930,12 @@ function showPendingQuestions(opts = {}) {
                   padding:6px;font-family:inherit;font-size:11px;cursor:pointer;min-width:120px;">
                   답해주기
                 </button>
+                <button class="pending-markdone" data-idx="${idx}"
+                  style="background:transparent;border:1px solid #8fb39a;color:#8fb39a;
+                  padding:6px 10px;font-family:inherit;font-size:11px;cursor:pointer;"
+                  title="이미 로그에 답한 기록이 있으면 완료 처리">
+                  ✓ 완료 표시
+                </button>
                 <button class="pending-delete" data-idx="${idx}"
                   style="background:transparent;border:1px solid #c97d5f;color:#c97d5f;
                   padding:6px 10px;font-family:inherit;font-size:11px;cursor:pointer;">
@@ -4027,17 +4022,21 @@ function showPendingQuestions(opts = {}) {
       const trimmed = answer.trim().slice(0, 100);
 
       try {
-        // 트랜잭션으로 답변 저장 (경쟁 조건 방지)
-        await Backend.answerPendingQuestion(idx, trimmed, currentUser.name);
+        // 유저명 + 시각으로 고유 식별 (인덱스는 동시 편집으로 어긋날 수 있음)
+        const questionId = `${q.user}_${q.at}`;
+        const speechText = `${q.user}, "${q.text}"... ${trimmed}`;
 
-        // 아이 대사로 즉시 노출 (질문한 유저에게 개인 대사)
-        // - saveSpeechForUser는 로컬 pet 조작이므로 별도 savePet이 필요하나
-        //   pet 덮어쓰기는 위험하므로 트랜잭션 한번 더
-        const speech = `${q.user}, "${q.text}"... ${trimmed}`;
-        saveSpeechForUser(currentPet, q.user, {
-          text: speech, at: Date.now(), to: q.user,
-        });
-        await Backend.savePet(currentPet);
+        // 트랜잭션 하나로 답변 + 개인 대사 모두 원자적 처리
+        const result = await Backend.answerPendingQuestion(
+          questionId, trimmed, currentUser.name, speechText
+        );
+
+        if (!result?.found) {
+          showToast(`⚠ 대상 질문을 찾을 수 없습니다 (이미 답변되었을 수 있음)`, 'warn');
+          modal.remove();
+          setTimeout(() => showPendingQuestions({ unansweredPage, answeredPage }), 200);
+          return;
+        }
 
         await Backend.addLog({
           user: currentUser.name, action: 'ANSWER',
@@ -4054,12 +4053,49 @@ function showPendingQuestions(opts = {}) {
     });
   });
 
+  modal.querySelectorAll('.pending-markdone').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt(btn.dataset.idx);
+      const q = currentPet.pendingQuestions?.[idx];
+      if (!q) return;
+      const existingAnswer = prompt(
+        `이 질문을 "이미 답함"으로 표시합니다.\n\n이전에 했던 답변 내용을 입력해주세요 (로그 기록용):\n\n"${q.text}"`,
+        '(답변 기록 없음)'
+      );
+      if (existingAnswer === null) return;
+      const trimmed = existingAnswer.trim().slice(0, 100) || '(답변 기록 없음)';
+
+      try {
+        const questionId = `${q.user}_${q.at}`;
+        // 완료 표시만 (speech 전달 안 함 = 대사 안 띄움)
+        const result = await Backend.answerPendingQuestion(
+          questionId, trimmed, currentUser.name, null
+        );
+        if (!result?.found) {
+          showToast(`⚠ 대상 질문을 찾을 수 없습니다`, 'warn');
+          modal.remove();
+          setTimeout(() => showPendingQuestions({ unansweredPage, answeredPage }), 200);
+          return;
+        }
+        showToast(`✓ 완료 처리됨`, 'system');
+        modal.remove();
+        setTimeout(() => showPendingQuestions({ unansweredPage, answeredPage }), 200);
+      } catch (err) {
+        console.error('[pending] 완료 표시 실패:', err);
+        showToast(`⚠ 완료 표시 실패`, 'warn');
+      }
+    });
+  });
+
   modal.querySelectorAll('.pending-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       const idx = parseInt(btn.dataset.idx);
+      const q = currentPet.pendingQuestions?.[idx];
+      if (!q) return;
       if (!confirm('이 질문을 삭제합니다. 계속할까요?')) return;
       try {
-        await Backend.deletePendingQuestion(idx);
+        const questionId = `${q.user}_${q.at}`;
+        await Backend.deletePendingQuestion(questionId);
         modal.remove();
         setTimeout(() => showPendingQuestions({ unansweredPage, answeredPage }), 200);
       } catch (err) {
