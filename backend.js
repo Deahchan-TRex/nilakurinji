@@ -89,6 +89,12 @@ export function defaultPet() {
     // CMD에서 답 못한 자유 문장들 [{user, text, at, answered, answer, answerBy, answerAt}]
     pendingQuestions: [],
 
+    // 라디오 이벤트
+    // radioSchedule: [{scheduledAt, windowEnd, channelId, freq, popped, matched, missed}]
+    // scheduledAt 은 타임스탬프, windowEnd = scheduledAt + 4h
+    radioSchedule: [],
+    radioLastGeneratedAt: 0,  // 마지막 스케줄 생성 시각 (24h 단위)
+
     // 공용 마지막 대사 (누가 봐도 보이는 것 - 진화 순간 등)
     lastSpeech: null,
     // 유저별 개인 대사: { [userName]: { text, at, to } }
@@ -293,6 +299,110 @@ export const Backend = {
       console.log('[pending] 삭제 트랜잭션 성공');
     } catch (err) {
       console.error('[pending] 삭제 트랜잭션 실패:', err);
+      throw err;
+    }
+  },
+
+  // ════════════════════════════════════════════════════════
+  // 라디오 이벤트 트랜잭션
+  // ════════════════════════════════════════════════════════
+
+  /**
+   * 라디오 스케줄 업데이트 (하루 3번 생성 시)
+   */
+  async updateRadioSchedule(newSchedule, generatedAt) {
+    if (CONFIG.LOCAL_TEST_MODE) {
+      const raw = localStorage.getItem('nk_pet');
+      const pet = raw ? JSON.parse(raw) : {};
+      pet.radioSchedule = newSchedule;
+      pet.radioLastGeneratedAt = generatedAt;
+      localStorage.setItem('nk_pet', JSON.stringify(pet));
+      listeners.pet.forEach(cb => cb(pet));
+      return;
+    }
+    try {
+      const docRef = db._fns.doc(db, 'pet', 'main');
+      await db._fns.runTransaction(db, async (tx) => {
+        const snap = await tx.get(docRef);
+        const pet = snap.exists() ? snap.data() : {};
+        pet.radioSchedule = newSchedule;
+        pet.radioLastGeneratedAt = generatedAt;
+        tx.set(docRef, pet);
+      });
+      console.log('[radio] 스케줄 업데이트:', newSchedule.length, '개');
+    } catch (err) {
+      console.error('[radio] 스케줄 업데이트 실패:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * 라디오 이벤트 완료 처리 (맞춤 or 놓침)
+   * @param {number} scheduledAt - 이벤트 식별자 (타임스탬프)
+   * @param {string} resolution - 'matched' | 'missed'
+   * @param {object} rewardApplied - 적용된 보상 { happy, intel, ..., personality: {} }
+   */
+  async resolveRadioEvent(scheduledAt, resolution, rewardApplied) {
+    if (CONFIG.LOCAL_TEST_MODE) {
+      const raw = localStorage.getItem('nk_pet');
+      const pet = raw ? JSON.parse(raw) : {};
+      const list = pet.radioSchedule || [];
+      const ev = list.find(e => e.scheduledAt === scheduledAt);
+      if (ev) {
+        ev.popped = true;
+        if (resolution === 'matched') ev.matched = true;
+        if (resolution === 'missed') ev.missed = true;
+      }
+      // 보상 적용
+      if (rewardApplied) {
+        for (const [key, val] of Object.entries(rewardApplied)) {
+          if (key === 'personality') continue;
+          if (pet[key] !== undefined) pet[key] = Math.max(0, Math.min(100, pet[key] + val));
+        }
+        if (rewardApplied.personality) {
+          pet.personality = pet.personality || {};
+          for (const [axis, d] of Object.entries(rewardApplied.personality)) {
+            pet.personality[axis] = Math.max(-100, Math.min(100, (pet.personality[axis] || 0) + d));
+          }
+        }
+      }
+      localStorage.setItem('nk_pet', JSON.stringify(pet));
+      listeners.pet.forEach(cb => cb(pet));
+      return { found: !!ev };
+    }
+    try {
+      const docRef = db._fns.doc(db, 'pet', 'main');
+      let found = false;
+      await db._fns.runTransaction(db, async (tx) => {
+        const snap = await tx.get(docRef);
+        const pet = snap.exists() ? snap.data() : {};
+        const list = pet.radioSchedule || [];
+        const ev = list.find(e => e.scheduledAt === scheduledAt);
+        if (ev && !ev.popped) {
+          ev.popped = true;
+          if (resolution === 'matched') ev.matched = true;
+          if (resolution === 'missed') ev.missed = true;
+          found = true;
+          // 보상 적용
+          if (rewardApplied) {
+            for (const [key, val] of Object.entries(rewardApplied)) {
+              if (key === 'personality') continue;
+              if (pet[key] !== undefined) pet[key] = Math.max(0, Math.min(100, pet[key] + val));
+            }
+            if (rewardApplied.personality) {
+              pet.personality = pet.personality || {};
+              for (const [axis, d] of Object.entries(rewardApplied.personality)) {
+                pet.personality[axis] = Math.max(-100, Math.min(100, (pet.personality[axis] || 0) + d));
+              }
+            }
+          }
+        }
+        tx.set(docRef, pet);
+      });
+      console.log('[radio] 이벤트 해소:', resolution, found ? '성공' : '이미 처리됨');
+      return { found };
+    } catch (err) {
+      console.error('[radio] 이벤트 해소 실패:', err);
       throw err;
     }
   },
