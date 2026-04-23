@@ -477,40 +477,33 @@ function handleCommand(raw) {
 
 /**
  * 크루가 CMD로 명령어 대신 자유 문장을 입력한 경우
- * → 펜딩 질문으로 저장해서 나중에 다른 크루가 답할 수 있게
+ * → 펜딩 질문으로 원자적 저장 (다른 크루 동시 저장 시에도 유실 안 됨)
  */
 async function savePendingQuestion(raw) {
   if (!currentPet || currentPet.isDead) return;
   if (!raw || raw.trim().length < 2) return;
 
   const text = raw.trim().slice(0, 120);
-
-  currentPet.pendingQuestions = currentPet.pendingQuestions || [];
-  currentPet.pendingQuestions.push({
+  const question = {
     user: currentUser.name,
     text,
     at: Date.now(),
     answered: false,
-    answer: '',        // Firebase가 null보다 빈 문자열을 안전하게 처리
+    answer: '',
     answerBy: '',
     answerAt: 0,
-  });
-  // 최대 50개 유지 (오래된 것 삭제)
-  if (currentPet.pendingQuestions.length > 50) {
-    currentPet.pendingQuestions = currentPet.pendingQuestions.slice(-50);
-  }
+  };
 
   try {
-    await Backend.savePet(currentPet);
-    // 공용 로그에도 기록 (다른 크루도 "새 말 등록됨" 감지 가능)
+    // 트랜잭션으로 추가 (Firebase 레벨에서 원자적)
+    await Backend.appendPendingQuestion(question);
+    // 공용 로그
     await Backend.addLog({
       user: currentUser.name, action: 'MSG',
       text: `◎ "${text.slice(0, 30)}${text.length > 30 ? '...' : ''}" 남김`,
       type: 'system',
     });
     appendSystemLog(`◎ 질문이 기록되었어. 언젠가 답이 돌아올지도 몰라.`, 'personality');
-    // 저장 성공 후 즉시 렌더 (낡은 상태 방지)
-    render();
   } catch (err) {
     console.error('[pending] 저장 실패:', err);
     appendSystemLog(`⚠ 메시지 저장 실패 · 다시 시도해주세요`, 'warn');
@@ -4033,27 +4026,31 @@ function showPendingQuestions(opts = {}) {
       if (!answer || !answer.trim()) return;
       const trimmed = answer.trim().slice(0, 100);
 
-      // 답변 저장
-      q.answered = true;
-      q.answer = trimmed;
-      q.answerBy = currentUser.name;
-      q.answerAt = Date.now();
+      try {
+        // 트랜잭션으로 답변 저장 (경쟁 조건 방지)
+        await Backend.answerPendingQuestion(idx, trimmed, currentUser.name);
 
-      // 아이 대사로 즉시 노출 (질문한 유저에게 개인 대사)
-      const speech = `${q.user}, "${q.text}"... ${trimmed}`;
-      saveSpeechForUser(currentPet, q.user, {
-        text: speech, at: Date.now(), to: q.user,
-      });
+        // 아이 대사로 즉시 노출 (질문한 유저에게 개인 대사)
+        // - saveSpeechForUser는 로컬 pet 조작이므로 별도 savePet이 필요하나
+        //   pet 덮어쓰기는 위험하므로 트랜잭션 한번 더
+        const speech = `${q.user}, "${q.text}"... ${trimmed}`;
+        saveSpeechForUser(currentPet, q.user, {
+          text: speech, at: Date.now(), to: q.user,
+        });
+        await Backend.savePet(currentPet);
 
-      await Backend.savePet(currentPet);
-      await Backend.addLog({
-        user: currentUser.name, action: 'ANSWER',
-        text: `${q.user}의 오래된 말에 답함`,
-        type: 'personality',
-      });
-      showToast(`${q.user}에게 답이 전해졌어`, 'personality');
-      modal.remove();
-      setTimeout(() => showPendingQuestions({ unansweredPage, answeredPage }), 200);
+        await Backend.addLog({
+          user: currentUser.name, action: 'ANSWER',
+          text: `${q.user}의 오래된 말에 답함`,
+          type: 'personality',
+        });
+        showToast(`${q.user}에게 답이 전해졌어`, 'personality');
+        modal.remove();
+        setTimeout(() => showPendingQuestions({ unansweredPage, answeredPage }), 200);
+      } catch (err) {
+        console.error('[pending] 답변 저장 실패:', err);
+        showToast(`⚠ 답변 저장 실패 · 다시 시도해주세요`, 'warn');
+      }
     });
   });
 
@@ -4061,10 +4058,14 @@ function showPendingQuestions(opts = {}) {
     btn.addEventListener('click', async () => {
       const idx = parseInt(btn.dataset.idx);
       if (!confirm('이 질문을 삭제합니다. 계속할까요?')) return;
-      currentPet.pendingQuestions.splice(idx, 1);
-      await Backend.savePet(currentPet);
-      modal.remove();
-      setTimeout(() => showPendingQuestions({ unansweredPage, answeredPage }), 200);
+      try {
+        await Backend.deletePendingQuestion(idx);
+        modal.remove();
+        setTimeout(() => showPendingQuestions({ unansweredPage, answeredPage }), 200);
+      } catch (err) {
+        console.error('[pending] 삭제 실패:', err);
+        showToast(`⚠ 삭제 실패 · 다시 시도해주세요`, 'warn');
+      }
     });
   });
 

@@ -129,6 +129,111 @@ export const Backend = {
     }
   },
 
+  /**
+   * pendingQuestions 배열에 항목 원자적 추가 (경쟁 조건 방지)
+   * - 다른 크루가 동시에 pet을 저장해도 이 항목은 유실되지 않음
+   * - Firestore 트랜잭션 사용
+   */
+  async appendPendingQuestion(question) {
+    if (CONFIG.LOCAL_TEST_MODE) {
+      const raw = localStorage.getItem('nk_pet');
+      const pet = raw ? JSON.parse(raw) : {};
+      pet.pendingQuestions = pet.pendingQuestions || [];
+      pet.pendingQuestions.push(question);
+      if (pet.pendingQuestions.length > 50) {
+        pet.pendingQuestions = pet.pendingQuestions.slice(-50);
+      }
+      localStorage.setItem('nk_pet', JSON.stringify(pet));
+      listeners.pet.forEach(cb => cb(pet));
+      return;
+    }
+    try {
+      const docRef = db._fns.doc(db, 'pet', 'main');
+      await db._fns.runTransaction(db, async (tx) => {
+        const snap = await tx.get(docRef);
+        const pet = snap.exists() ? snap.data() : {};
+        pet.pendingQuestions = Array.isArray(pet.pendingQuestions) ? pet.pendingQuestions : [];
+        pet.pendingQuestions.push(question);
+        if (pet.pendingQuestions.length > 50) {
+          pet.pendingQuestions = pet.pendingQuestions.slice(-50);
+        }
+        tx.set(docRef, pet);
+      });
+      console.log('[pending] 트랜잭션 저장 성공:', question.text.slice(0, 20));
+    } catch (err) {
+      console.error('[pending] 트랜잭션 실패:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * 펜딩 질문 답변 원자적 저장 (답변도 동일한 경쟁 조건 위험)
+   */
+  async answerPendingQuestion(questionIndex, answer, answerBy) {
+    if (CONFIG.LOCAL_TEST_MODE) {
+      const raw = localStorage.getItem('nk_pet');
+      const pet = raw ? JSON.parse(raw) : {};
+      if (pet.pendingQuestions?.[questionIndex]) {
+        pet.pendingQuestions[questionIndex].answered = true;
+        pet.pendingQuestions[questionIndex].answer = answer;
+        pet.pendingQuestions[questionIndex].answerBy = answerBy;
+        pet.pendingQuestions[questionIndex].answerAt = Date.now();
+      }
+      localStorage.setItem('nk_pet', JSON.stringify(pet));
+      listeners.pet.forEach(cb => cb(pet));
+      return;
+    }
+    try {
+      const docRef = db._fns.doc(db, 'pet', 'main');
+      await db._fns.runTransaction(db, async (tx) => {
+        const snap = await tx.get(docRef);
+        const pet = snap.exists() ? snap.data() : {};
+        if (pet.pendingQuestions?.[questionIndex]) {
+          pet.pendingQuestions[questionIndex].answered = true;
+          pet.pendingQuestions[questionIndex].answer = answer;
+          pet.pendingQuestions[questionIndex].answerBy = answerBy;
+          pet.pendingQuestions[questionIndex].answerAt = Date.now();
+        }
+        tx.set(docRef, pet);
+      });
+      console.log('[pending] 답변 트랜잭션 성공');
+    } catch (err) {
+      console.error('[pending] 답변 트랜잭션 실패:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * 펜딩 질문 삭제 (관리자용)
+   */
+  async deletePendingQuestion(questionIndex) {
+    if (CONFIG.LOCAL_TEST_MODE) {
+      const raw = localStorage.getItem('nk_pet');
+      const pet = raw ? JSON.parse(raw) : {};
+      if (pet.pendingQuestions) {
+        pet.pendingQuestions.splice(questionIndex, 1);
+      }
+      localStorage.setItem('nk_pet', JSON.stringify(pet));
+      listeners.pet.forEach(cb => cb(pet));
+      return;
+    }
+    try {
+      const docRef = db._fns.doc(db, 'pet', 'main');
+      await db._fns.runTransaction(db, async (tx) => {
+        const snap = await tx.get(docRef);
+        const pet = snap.exists() ? snap.data() : {};
+        if (pet.pendingQuestions) {
+          pet.pendingQuestions.splice(questionIndex, 1);
+        }
+        tx.set(docRef, pet);
+      });
+      console.log('[pending] 삭제 트랜잭션 성공');
+    } catch (err) {
+      console.error('[pending] 삭제 트랜잭션 실패:', err);
+      throw err;
+    }
+  },
+
   onPetChange(callback) {
     listeners.pet.push(callback);
 
