@@ -163,7 +163,10 @@ function renderMain() {
               <span class="badge" id="stage-badge">EGG</span>
             </div>
             <div class="tbl-body">
-              <pre class="pet-art" id="pet-art"></pre>
+              <div class="pet-art-wrap">
+                <pre class="pet-art" id="pet-art"></pre>
+                <div id="radio-icon-slot" class="radio-icon-slot"></div>
+              </div>
               <div class="pet-id">
                 <div class="cn">${CONFIG.PET_NAME}</div>
                 <div class="full">${CONFIG.PET_FULLNAME}</div>
@@ -301,82 +304,134 @@ function renderCommandButtons() {
       <button class="cmd admin" data-act="help">HELP</button>
     `;
 
-    // 관리자 시뮬레이션 바 추가 (단계 점프)
-    let simBar = document.getElementById('cmds-sim');
-    if (!simBar) {
-      simBar = document.createElement('div');
-      simBar.id = 'cmds-sim';
-      simBar.className = 'cmds';
-      simBar.style.marginTop = '4px';
-      adminCmds.parentNode.insertBefore(simBar, adminCmds.nextSibling);
-    }
-    simBar.innerHTML = `
-      <button class="cmd admin" data-act="sim-egg">→ EGG</button>
-      <button class="cmd admin" data-act="sim-baby">→ BABY</button>
-      <button class="cmd admin" data-act="sim-child">→ CHILD</button>
-      <button class="cmd admin" data-act="sim-teen">→ TEEN</button>
-      <button class="cmd admin" data-act="sim-adult">→ ADULT</button>
-      <button class="cmd admin" data-act="sim-kill">→ DEAD</button>
-    `;
+    // 기존 분산된 바들 제거 (재렌더 시 중복 방지)
+    ['cmds-sim', 'cmds-preset', 'cmds-time', 'cmds-stat'].forEach(id => {
+      const old = document.getElementById(id);
+      if (old) old.remove();
+    });
 
-    // 스탯/성격 프리셋 바
-    let presetBar = document.getElementById('cmds-preset');
-    if (!presetBar) {
-      presetBar = document.createElement('div');
-      presetBar.id = 'cmds-preset';
-      presetBar.className = 'cmds';
-      presetBar.style.marginTop = '4px';
-      simBar.parentNode.insertBefore(presetBar, simBar.nextSibling);
+    // 카테고리 그룹 컨테이너 (한 번만 생성)
+    let groupedBar = document.getElementById('cmds-grouped');
+    if (!groupedBar) {
+      groupedBar = document.createElement('div');
+      groupedBar.id = 'cmds-grouped';
+      groupedBar.className = 'admin-groups';
+      groupedBar.style.marginTop = '4px';
+      adminCmds.parentNode.insertBefore(groupedBar, adminCmds.nextSibling);
     }
-    presetBar.innerHTML = `
-      <button class="cmd admin" data-act="preset-full">스탯 MAX</button>
-      <button class="cmd admin" data-act="preset-low">스탯 LOW</button>
-      <button class="cmd admin" data-act="signal-admin">신호 제어</button>
-      <button class="cmd admin" data-act="finale">FINALE</button>
-      <button class="cmd admin" data-act="minigame">UP/DOWN</button>
-      <button class="cmd admin" data-act="pending">말함</button>
-      <button class="cmd admin" data-act="forcerefresh">⚡ 전체 새로고침</button>
-      <button class="cmd admin" data-act="killswitch">🔒 킬스위치</button>
-      <button class="cmd admin" data-act="trimlogs">🧹 LOG 정리</button>
-      <button class="cmd admin" data-act="clearlogs">LOG 리셋</button>
-      <button class="cmd" data-act="lore">LORE</button>
-    `;
 
-    // 시간 조작 바 (hour 단위 성장)
-    let timeBar = document.getElementById('cmds-time');
-    if (!timeBar) {
-      timeBar = document.createElement('div');
-      timeBar.id = 'cmds-time';
-      timeBar.className = 'cmds';
-      timeBar.style.marginTop = '4px';
-      presetBar.parentNode.insertBefore(timeBar, presetBar.nextSibling);
-    }
-    timeBar.innerHTML = `
-      <button class="cmd admin" data-act="age-1">+1h</button>
-      <button class="cmd admin" data-act="age-3">+3h</button>
-      <button class="cmd admin" data-act="age-6">+6h</button>
-      <button class="cmd admin" data-act="age-12">+12h</button>
-      <button class="cmd admin" data-act="age-24">+24h</button>
-      <button class="cmd admin" data-act="age-custom">⏱ 커스텀</button>
-    `;
+    // 펼침 상태 저장 (localStorage, 세션 유지)
+    const savedExpanded = JSON.parse(localStorage.getItem('adminGroupExpanded') || '{}');
 
-    // 스탯 개별 조작 바
-    let statBar = document.getElementById('cmds-stat');
-    if (!statBar) {
-      statBar = document.createElement('div');
-      statBar.id = 'cmds-stat';
-      statBar.className = 'cmds';
-      statBar.style.marginTop = '4px';
-      timeBar.parentNode.insertBefore(statBar, timeBar.nextSibling);
-    }
-    statBar.innerHTML = `
-      <button class="cmd admin" data-act="edit-stat">스탯 편집</button>
-      <button class="cmd admin" data-act="edit-persona">성격 편집</button>
-      <button class="cmd admin" data-act="snapshotsave">💾 SNAP</button>
-      <button class="cmd admin" data-act="snapshotlist">♻ RESTORE</button>
-      <button class="cmd admin" data-act="adminrevive">REVIVE</button>
-      <button class="cmd" data-act="logout">LOGOUT</button>
-    `;
+    const groups = [
+      {
+        id: 'sim',
+        label: '단계 이동',
+        defaultOpen: false,
+        buttons: `
+          <button class="cmd admin" data-act="sim-egg">→ EGG</button>
+          <button class="cmd admin" data-act="sim-baby">→ BABY</button>
+          <button class="cmd admin" data-act="sim-child">→ CHILD</button>
+          <button class="cmd admin" data-act="sim-teen">→ TEEN</button>
+          <button class="cmd admin" data-act="sim-adult">→ ADULT</button>
+          <button class="cmd admin" data-act="sim-kill">→ DEAD</button>
+        `,
+      },
+      {
+        id: 'time',
+        label: '시간 조작',
+        defaultOpen: false,
+        buttons: `
+          <button class="cmd admin" data-act="age-1">+1h</button>
+          <button class="cmd admin" data-act="age-3">+3h</button>
+          <button class="cmd admin" data-act="age-6">+6h</button>
+          <button class="cmd admin" data-act="age-12">+12h</button>
+          <button class="cmd admin" data-act="age-24">+24h</button>
+          <button class="cmd admin" data-act="age-custom">⏱ 커스텀</button>
+        `,
+      },
+      {
+        id: 'edit',
+        label: '스탯/성격 편집',
+        defaultOpen: false,
+        buttons: `
+          <button class="cmd admin" data-act="preset-full">스탯 MAX</button>
+          <button class="cmd admin" data-act="preset-low">스탯 LOW</button>
+          <button class="cmd admin" data-act="edit-stat">스탯 편집</button>
+          <button class="cmd admin" data-act="edit-persona">성격 편집</button>
+        `,
+      },
+      {
+        id: 'events',
+        label: '이벤트 / 미니게임',
+        defaultOpen: true,
+        buttons: `
+          <button class="cmd admin" data-act="signal-admin">📡 신호 제어</button>
+          <button class="cmd admin" data-act="finale">⭐ FINALE</button>
+          <button class="cmd admin" data-act="minigame">🎯 UP/DOWN</button>
+          <button class="cmd admin" data-act="pending">💭 말함</button>
+          <button class="cmd admin" data-act="radio-test">📻 라디오 테스트</button>
+        `,
+      },
+      {
+        id: 'system',
+        label: '시스템',
+        defaultOpen: false,
+        buttons: `
+          <button class="cmd admin" data-act="forcerefresh">⚡ 전체 새로고침</button>
+          <button class="cmd admin" data-act="killswitch">🔒 킬스위치</button>
+          <button class="cmd admin" data-act="trimlogs">🧹 LOG 정리</button>
+          <button class="cmd admin" data-act="clearlogs">LOG 리셋</button>
+        `,
+      },
+      {
+        id: 'backup',
+        label: '백업 / 복원',
+        defaultOpen: false,
+        buttons: `
+          <button class="cmd admin" data-act="snapshotsave">💾 SNAP</button>
+          <button class="cmd admin" data-act="snapshotlist">♻ RESTORE</button>
+          <button class="cmd admin" data-act="adminrevive">REVIVE</button>
+        `,
+      },
+      {
+        id: 'exit',
+        label: '기타',
+        defaultOpen: true,
+        buttons: `
+          <button class="cmd" data-act="lore">LORE</button>
+          <button class="cmd" data-act="logout">LOGOUT</button>
+        `,
+      },
+    ];
+
+    groupedBar.innerHTML = groups.map(g => {
+      const open = savedExpanded[g.id] !== undefined ? savedExpanded[g.id] : g.defaultOpen;
+      return `
+        <div class="admin-group ${open ? 'open' : ''}" data-group="${g.id}">
+          <div class="admin-group-head" data-toggle="${g.id}">
+            <span class="admin-group-arrow">${open ? '▾' : '▸'}</span>
+            <span class="admin-group-label">${g.label}</span>
+          </div>
+          <div class="admin-group-body">
+            <div class="cmds">${g.buttons}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // 토글 동작
+    groupedBar.querySelectorAll('.admin-group-head').forEach(head => {
+      head.addEventListener('click', () => {
+        const gid = head.dataset.toggle;
+        const box = groupedBar.querySelector(`[data-group="${gid}"]`);
+        const willOpen = !box.classList.contains('open');
+        box.classList.toggle('open', willOpen);
+        head.querySelector('.admin-group-arrow').textContent = willOpen ? '▾' : '▸';
+        savedExpanded[gid] = willOpen;
+        localStorage.setItem('adminGroupExpanded', JSON.stringify(savedExpanded));
+      });
+    });
   }
 
   document.querySelectorAll('.cmd').forEach(btn => {
@@ -391,6 +446,7 @@ function renderCommandButtons() {
       else if (act === 'signal-admin') showSignalAdminPanel();
       else if (act === 'minigame') showMinigameHub();
       else if (act === 'pending') showPendingQuestions();
+      else if (act === 'radio-test') testRadioPopup();
       else if (act === 'finale') {
         // 이미 봉인된 경우 편지 보기, 아니면 답장 UI
         if (currentPet?.finaleSealed) showSealedLetter();
@@ -747,6 +803,9 @@ function render() {
   // 탭 리스너 유지 (DOM이 바뀌었을 수도 있으니 확인)
   attachPetTapListener();
 
+  // 라디오 신호 아이콘 (활성 이벤트 있을 때만 표시)
+  renderRadioIcon();
+
   // 단계별 태그
   const stageTags = {
     EGG:   [{ text: '포장 중', class: '' }, { text: '수송 대기', class: '' }],
@@ -1058,6 +1117,15 @@ function render() {
       Backend.addLog({
         user: null, action: 'SYSTEM',
         text: `◆ 새 놀이 해금: [G] 메뉴에서 블랙잭과 틱택토가 열렸습니다`,
+        type: 'epic',
+      });
+    }
+
+    // TEEN 진화 시 라디오 감각 각성 안내
+    if (stageResult.to === 'TEEN') {
+      Backend.addLog({
+        user: null, action: 'SYSTEM',
+        text: `◆ 새 감각 각성: 라디오 신호를 듣기 시작했다. 하루 세 번 잡힌다.`,
         type: 'epic',
       });
     }
@@ -4324,6 +4392,494 @@ async function incrementMinigameCount() {
 }
 
 // ════════════════════════════════════════════════════════════
+// 라디오 이벤트 시스템
+// ════════════════════════════════════════════════════════════
+
+/**
+ * OBJECT 테스트 모드 - 라디오용
+ * minigameTestMode와 별도 (게임과 구분)
+ */
+let radioTestMode = false;
+
+function isRadioTestMode() {
+  return currentUser?.isAdmin && radioTestMode;
+}
+
+/**
+ * 오늘의 라디오 스케줄이 필요한지 체크하고 생성
+ * - 하루 1번 (24h 경과 후) 3개 스케줄 만듦
+ * - 현재 시각 +1h 후부터 남은 하루 내 4h 이상 간격으로 랜덤 배치
+ */
+async function ensureRadioSchedule() {
+  if (!currentPet || currentPet.isDead) return;
+  // 라디오는 TEEN부터만 발생
+  if (currentPet.stage !== 'TEEN' && currentPet.stage !== 'ADULT') return;
+  if (isRadioTestMode()) return;  // 테스트 모드는 스케줄 건드리지 않음
+
+  const now = Date.now();
+  const lastGen = currentPet.radioLastGeneratedAt || 0;
+  const DAY_MS = 24 * 3600 * 1000;
+
+  // 하루 지났거나 스케줄 없으면 새로 생성
+  if (now - lastGen < DAY_MS) return;
+
+  // 기존 미처리 이벤트 정리 (window 넘긴 것은 missed 처리 안 함, 그냥 새 걸로 덮어씀)
+  const cfg = CONFIG.RADIO_CONFIG;
+  const schedule = [];
+  const hourMs = 3600 * 1000;
+  const minGapMs = cfg.MIN_GAP_HOURS * hourMs;
+
+  // 앞으로 18시간 내 (남은 하루) 3번 분포
+  const baseStart = now + 30 * 60 * 1000;  // 지금부터 30분 뒤부터
+  const baseEnd = now + 18 * hourMs;       // 최대 18h 뒤까지
+  const slots = 3;
+  let cursor = baseStart;
+  for (let i = 0; i < slots; i++) {
+    // 각 슬롯은 이전 + 4h 이상, 최대 (18-i*4)h 지점까지
+    const slotMin = cursor;
+    const slotMax = Math.max(cursor + hourMs, baseEnd - (slots - 1 - i) * minGapMs);
+    const at = slotMin + Math.floor(Math.random() * Math.max(1, slotMax - slotMin));
+
+    // 랜덤 채널 선택
+    const channel = cfg.CHANNELS[Math.floor(Math.random() * cfg.CHANNELS.length)];
+    // 랜덤 정답 주파수 (10~90 범위, 너무 가장자리 피함)
+    const freq = 10 + Math.floor(Math.random() * 80);
+
+    schedule.push({
+      scheduledAt: at,
+      windowEnd: at + cfg.WINDOW_HOURS * hourMs,
+      channelId: channel.id,
+      freq,
+      popped: false,
+      matched: false,
+      missed: false,
+    });
+    cursor = at + minGapMs;
+  }
+
+  try {
+    await Backend.updateRadioSchedule(schedule, now);
+    console.log('[radio] 스케줄 생성 완료', schedule.map(s => new Date(s.scheduledAt).toLocaleTimeString()));
+  } catch (err) {
+    console.error('[radio] 스케줄 저장 실패:', err);
+  }
+}
+
+/**
+ * 활성 라디오 이벤트 찾기
+ * - scheduledAt 이 지났고 windowEnd 이전이며 popped=false 인 것
+ */
+function findActiveRadioEvent() {
+  if (!currentPet) return null;
+  const now = Date.now();
+  const list = currentPet.radioSchedule || [];
+  return list.find(e => !e.popped && e.scheduledAt <= now && now < e.windowEnd);
+}
+
+/**
+ * 미처리 missed 이벤트 찾기 (windowEnd 지났는데 popped=false)
+ * 백그라운드에서 자동 missed 처리
+ */
+async function processExpiredRadioEvents() {
+  if (!currentPet) return;
+  if (isRadioTestMode()) return;
+  const now = Date.now();
+  const list = currentPet.radioSchedule || [];
+  for (const e of list) {
+    if (!e.popped && e.windowEnd < now) {
+      // 놓침 처리
+      const penalty = CONFIG.RADIO_CONFIG.MISSED_PENALTY;
+      try {
+        await Backend.resolveRadioEvent(e.scheduledAt, 'missed', penalty);
+        await Backend.addLog({
+          user: null, action: 'RADIO',
+          text: `◇ 주파수 신호를 놓쳤다. 흩어진 채 사라졌다.`,
+          type: 'warn',
+        });
+      } catch (err) {
+        console.warn('[radio] missed 처리 실패:', err);
+      }
+    }
+  }
+}
+
+// 현재 열린 팝업 식별자 (중복 방지)
+let currentRadioPopup = null;
+// AudioContext & noise 노드 (전역 유지)
+let radioAudioCtx = null;
+let radioNoiseSource = null;
+let radioNoiseGain = null;
+
+/**
+ * 화이트노이즈 생성/재생 (Web Audio API)
+ * volume: 0.0 ~ 0.2 (20% 상한)
+ */
+function startRadioNoise() {
+  try {
+    if (!radioAudioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      radioAudioCtx = new AC();
+    }
+    if (radioAudioCtx.state === 'suspended') {
+      radioAudioCtx.resume();
+    }
+    if (radioNoiseSource) return;  // 이미 재생 중
+
+    // 1초 길이 노이즈 버퍼, 반복 재생
+    const bufferSize = radioAudioCtx.sampleRate * 1;
+    const buffer = radioAudioCtx.createBuffer(1, bufferSize, radioAudioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    radioNoiseSource = radioAudioCtx.createBufferSource();
+    radioNoiseSource.buffer = buffer;
+    radioNoiseSource.loop = true;
+
+    radioNoiseGain = radioAudioCtx.createGain();
+    radioNoiseGain.gain.value = 0.2;  // 초기 20%
+
+    radioNoiseSource.connect(radioNoiseGain);
+    radioNoiseGain.connect(radioAudioCtx.destination);
+    radioNoiseSource.start(0);
+  } catch (err) {
+    console.warn('[radio] 오디오 초기화 실패:', err);
+  }
+}
+
+function setRadioNoiseVolume(vol) {
+  if (radioNoiseGain) {
+    radioNoiseGain.gain.value = Math.max(0, Math.min(0.2, vol));
+  }
+}
+
+function stopRadioNoise() {
+  try {
+    if (radioNoiseSource) {
+      radioNoiseSource.stop(0);
+      radioNoiseSource.disconnect();
+      radioNoiseSource = null;
+    }
+    if (radioNoiseGain) {
+      radioNoiseGain.disconnect();
+      radioNoiseGain = null;
+    }
+  } catch (err) { /* ignore */ }
+}
+
+/**
+ * 라디오 팝업 열기 (실수로 닫아도 ASCII 옆 신호 아이콘으로 복귀 가능)
+ */
+function openRadioPopup(event, opts = {}) {
+  if (!event) return;
+  const existing = document.getElementById('radio-popup');
+  if (existing) { existing.remove(); return; }
+
+  const cfg = CONFIG.RADIO_CONFIG;
+  const channel = cfg.CHANNELS.find(c => c.id === event.channelId);
+  if (!channel) return;
+
+  currentRadioPopup = event.scheduledAt;
+
+  const state = {
+    currentFreq: 50,  // 레버 시작 위치
+    targetFreq: event.freq,
+    tolerance: cfg.TOLERANCE,
+    matched: false,
+    dragging: false,
+  };
+
+  const modal = document.createElement('div');
+  modal.id = 'radio-popup';
+  modal.className = 'radio-popup';
+  modal.innerHTML = renderRadioPopupHTML(state, event, channel);
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  attachRadioHandlers(modal, state, event, channel);
+
+  // 노이즈 시작 (브라우저 정책: 사용자 인터랙션 필요)
+  // 팝업 띄운 상태에서 첫 클릭/드래그 시 시작하도록 함
+}
+
+function renderRadioPopupHTML(state, event, channel) {
+  const dist = Math.abs(state.currentFreq - state.targetFreq);
+  const proximity = Math.max(0, 1 - dist / 40);  // 0 (먼) ~ 1 (가까움)
+  const signalBars = Math.min(4, Math.floor(proximity * 5));
+  const remainMs = event.windowEnd - Date.now();
+  const remainMin = Math.max(0, Math.floor(remainMs / 60000));
+  const remainH = Math.floor(remainMin / 60);
+  const remainLabel = remainH > 0 ? `${remainH}시간 ${remainMin % 60}분` : `${remainMin}분`;
+
+  const isTest = isRadioTestMode();
+
+  return `
+    <div class="radio-popup-head">
+      <span>> RADIO.EXE ${isTest ? '· <span style="color:#e8a853;">[TEST]</span>' : ''}</span>
+      <span class="radio-close" id="radio-close" title="닫기 (아이콘으로 최소화됨)">─ _ ✕</span>
+    </div>
+    <div class="radio-popup-body">
+      <div class="radio-terminal-line">&gt; 알 수 없는 신호 감지. 주파수 조정 중...</div>
+      <div class="radio-terminal-line dim">&gt; 남은 시간: ${remainLabel}</div>
+      <div class="radio-terminal-line dim">&gt; ${channel.desc.slice(0, 3)}...</div>
+
+      <!-- 신호 강도 바 -->
+      <div class="radio-signal-row">
+        <span class="radio-signal-label">SIGNAL</span>
+        <div class="radio-signal-bars">
+          ${[0,1,2,3].map(i =>
+            `<span class="radio-bar ${i < signalBars ? 'on' : ''}"></span>`
+          ).join('')}
+        </div>
+        <span class="radio-freq-label">${state.currentFreq.toFixed(1)} MHz</span>
+      </div>
+
+      <!-- 레버 드래그 영역 -->
+      <div class="radio-slider-track" id="radio-slider-track">
+        <div class="radio-slider-marks"></div>
+        <div class="radio-slider-knob" id="radio-slider-knob"
+          style="left: ${state.currentFreq}%;"></div>
+      </div>
+      <div class="radio-slider-axis">
+        <span>0</span><span>50</span><span>100</span>
+      </div>
+
+      <!-- 확인 버튼 -->
+      <div class="radio-actions">
+        <button id="radio-confirm" class="radio-btn" ${state.matched ? 'disabled' : ''}>[!] 이 주파수로 맞춤</button>
+      </div>
+
+      <div class="radio-terminal-line dim">
+        &gt; 드래그하여 주파수 조정. [!] 버튼으로 확인.
+      </div>
+    </div>
+  `;
+}
+
+function attachRadioHandlers(modal, state, event, channel) {
+  const track = modal.querySelector('#radio-slider-track');
+  const knob = modal.querySelector('#radio-slider-knob');
+  const closeBtn = modal.querySelector('#radio-close');
+  const confirmBtn = modal.querySelector('#radio-confirm');
+
+  // 닫기 = 최소화 (저장 안 됨, 아이콘만 남김)
+  closeBtn?.addEventListener('click', () => {
+    modal.remove();
+    currentRadioPopup = null;
+    stopRadioNoise();
+    // 테스트 모드는 팝업 닫으면 해제 (아이콘 안 남김)
+    if (radioTestMode) {
+      radioTestMode = false;
+    }
+    // 아이콘은 render()에서 자동 표시 (findActiveRadioEvent에 걸림)
+    render();
+  });
+
+  // 드래그 로직
+  function freqFromClientX(clientX) {
+    const rect = track.getBoundingClientRect();
+    const rel = (clientX - rect.left) / rect.width;
+    return Math.max(0, Math.min(100, rel * 100));
+  }
+
+  function updateKnob(freq) {
+    state.currentFreq = freq;
+    knob.style.left = freq + '%';
+    // 신호 강도 표시 업데이트 (부분 렌더)
+    const dist = Math.abs(freq - state.targetFreq);
+    const proximity = Math.max(0, 1 - dist / 40);
+    const signalBars = Math.min(4, Math.floor(proximity * 5));
+    const bars = modal.querySelectorAll('.radio-bar');
+    bars.forEach((b, i) => {
+      if (i < signalBars) b.classList.add('on');
+      else b.classList.remove('on');
+    });
+    const freqLabel = modal.querySelector('.radio-freq-label');
+    if (freqLabel) freqLabel.textContent = freq.toFixed(1) + ' MHz';
+
+    // 노이즈 볼륨 조정 (정답 가까울수록 낮아짐)
+    // 거리 0 = 0볼륨(깨끗), 거리 40+ = 0.2볼륨
+    const vol = Math.min(0.2, dist / 40 * 0.2);
+    setRadioNoiseVolume(vol);
+  }
+
+  function startDrag(clientX) {
+    state.dragging = true;
+    // 첫 인터랙션에서 노이즈 시작
+    startRadioNoise();
+    updateKnob(freqFromClientX(clientX));
+  }
+
+  function onMove(e) {
+    if (!state.dragging) return;
+    const clientX = e.touches?.[0]?.clientX ?? e.clientX;
+    updateKnob(freqFromClientX(clientX));
+    e.preventDefault();
+  }
+
+  function endDrag() {
+    state.dragging = false;
+  }
+
+  track.addEventListener('mousedown', e => startDrag(e.clientX));
+  track.addEventListener('touchstart', e => startDrag(e.touches[0].clientX), { passive: true });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('mouseup', endDrag);
+  document.addEventListener('touchend', endDrag);
+
+  // 확인 버튼
+  confirmBtn?.addEventListener('click', async () => {
+    if (state.matched) return;
+    const dist = Math.abs(state.currentFreq - state.targetFreq);
+    if (dist <= state.tolerance) {
+      state.matched = true;
+      await onRadioMatched(state, event, channel, modal);
+    } else {
+      // 실패 피드백
+      const hint = state.currentFreq < state.targetFreq ? '↑ 주파수를 높여봐' : '↓ 주파수를 낮춰봐';
+      const terminal = modal.querySelector('.radio-popup-body');
+      if (terminal) {
+        const line = document.createElement('div');
+        line.className = 'radio-terminal-line warn';
+        line.textContent = `> 치직... 아직 맞지 않아. ${hint}`;
+        terminal.insertBefore(line, terminal.firstChild);
+      }
+    }
+  });
+}
+
+async function onRadioMatched(state, event, channel, modal) {
+  stopRadioNoise();
+  currentRadioPopup = null;
+
+  // 채널 공개 UI
+  const body = modal.querySelector('.radio-popup-body');
+  if (body) {
+    body.innerHTML = `
+      <div class="radio-terminal-line good">&gt; 신호 포착! ${channel.label}</div>
+      <div class="radio-terminal-line">&gt; ${channel.desc}</div>
+      <div class="radio-terminal-line dim">&gt; ${channel.story}</div>
+      ${isRadioTestMode()
+        ? `<div class="radio-terminal-line warn">&gt; [TEST] 저장 안 됨</div>`
+        : ''}
+      <div class="radio-actions">
+        <button id="radio-close-after" class="radio-btn">[닫기]</button>
+      </div>
+    `;
+    modal.querySelector('#radio-close-after')?.addEventListener('click', () => {
+      modal.remove();
+      if (radioTestMode) radioTestMode = false;
+      render();
+    });
+  }
+
+  // 테스트 모드: 저장 안 함
+  if (isRadioTestMode()) return;
+
+  // 실제 보상 적용
+  try {
+    await Backend.resolveRadioEvent(event.scheduledAt, 'matched', channel.reward);
+    // 아이 대사 공용으로
+    saveBroadcastSpeech(currentPet, {
+      text: channel.story, at: Date.now(), to: '__sys__',
+    });
+    await Backend.addLog({
+      user: currentUser.name, action: 'RADIO',
+      text: `◆ 주파수 포착: ${channel.label}`,
+      type: 'epic',
+    });
+  } catch (err) {
+    console.error('[radio] 보상 저장 실패:', err);
+  }
+}
+
+/**
+ * ASCII 옆 라디오 신호 아이콘 (실수로 닫았거나 미처리 시)
+ * render()에서 호출됨
+ */
+function renderRadioIcon() {
+  if (isRadioTestMode()) return;  // 테스트 모드는 스케줄 기반 아이콘 숨김 (직접 호출만)
+  const container = document.getElementById('radio-icon-slot');
+  if (!container) return;
+  const ev = findActiveRadioEvent();
+  if (!ev || currentRadioPopup === ev.scheduledAt) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = `
+    <div class="radio-icon-wrapper" id="radio-icon-wrapper" title="주파수 신호 감지됨 (클릭)">
+      <div class="radio-wave r1"></div>
+      <div class="radio-wave r2"></div>
+      <div class="radio-wave r3"></div>
+      <div class="radio-core"></div>
+    </div>
+  `;
+  document.getElementById('radio-icon-wrapper')?.addEventListener('click', () => {
+    const activeEv = findActiveRadioEvent();
+    if (activeEv) openRadioPopup(activeEv);
+  });
+}
+
+/**
+ * 라디오 틱 - 주기적 호출 (5초마다)
+ * - 스케줄 확인, 만료 처리, 새 팝업 자동 오픈
+ */
+async function radioTick() {
+  if (!currentPet || currentPet.isDead) return;
+  // 라디오는 TEEN부터만 발생
+  if (currentPet.stage !== 'TEEN' && currentPet.stage !== 'ADULT') return;
+
+  // 테스트 모드는 자동 틱 건너뜀 (수동 호출만)
+  if (isRadioTestMode()) return;
+
+  // 스케줄 갱신 (하루 1회)
+  await ensureRadioSchedule();
+
+  // 만료 처리
+  await processExpiredRadioEvents();
+
+  // 활성 이벤트 있으면 팝업 자동 오픈 (아직 안 열린 경우)
+  const activeEv = findActiveRadioEvent();
+  if (activeEv && currentRadioPopup !== activeEv.scheduledAt) {
+    const isOpen = document.getElementById('radio-popup');
+    if (!isOpen) {
+      openRadioPopup(activeEv);
+    }
+  }
+
+  // 아이콘 갱신
+  renderRadioIcon();
+}
+
+/**
+ * OBJECT 테스트: 즉석 라디오 팝업 (스케줄 무시)
+ */
+function testRadioPopup() {
+  if (!currentUser?.isAdmin) return;
+  radioTestMode = true;
+  const cfg = CONFIG.RADIO_CONFIG;
+  const channel = cfg.CHANNELS[Math.floor(Math.random() * cfg.CHANNELS.length)];
+  const freq = 10 + Math.floor(Math.random() * 80);
+  const now = Date.now();
+  const fakeEvent = {
+    scheduledAt: now,
+    windowEnd: now + 4 * 3600 * 1000,
+    channelId: channel.id,
+    freq,
+    popped: false,
+    matched: false,
+    missed: false,
+  };
+  openRadioPopup(fakeEvent);
+  console.log('[radio] 테스트 팝업 - 정답 주파수:', freq, '/ 채널:', channel.label);
+}
+
+// ════════════════════════════════════════════════════════════
 // 미니게임 허브 — 단계별 게임 해금
 // ════════════════════════════════════════════════════════════
 
@@ -5359,9 +5915,10 @@ async function startGame() {
     }
   }, 500);
 
-  // 주기적 틱 (5초) + 유휴 대사 + 신호 자동 발사
+  // 주기적 틱 (5초) + 유휴 대사 + 신호 자동 발사 + 라디오
   let lastIdleWriteAt = 0;  // 유휴 대사 쓰기 쿨다운
   let lastSignalCheckAt = 0;  // 신호 발사 체크 쿨다운
+  let lastRadioCheckAt = 0;   // 라디오 체크 쿨다운
   timers.tick = setInterval(() => {
     if (!currentPet || currentPet.isDead) return;
 
@@ -5371,6 +5928,12 @@ async function startGame() {
     if (now - lastSignalCheckAt > 60 * 1000) {
       lastSignalCheckAt = now;
       processSignalSystem();
+    }
+
+    // ─────── 라디오 이벤트 (1분에 1회) ───────
+    if (now - lastRadioCheckAt > 60 * 1000) {
+      lastRadioCheckAt = now;
+      radioTick();
     }
 
     // 개인 대사 기준으로 마지막 시점 계산 (공용 lastSpeech로는 판정 오류 발생)

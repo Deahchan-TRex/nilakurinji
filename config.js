@@ -5,7 +5,7 @@
 export const CONFIG = {
   // ── 앱 버전 (배포마다 올림) ───────────────────────────
   // 이 값이 바뀌면 모든 접속자가 자동 새로고침됨
-  APP_VERSION: '2026.04.22.16',
+  APP_VERSION: '2026.04.22.18',
 
   // ── 캐릭터 기본 ───────────────────────────────────────
   PET_NAME: 'MARS II',
@@ -225,6 +225,64 @@ export const CONFIG = {
         lose: { intel: +3, personality: { activeVsCalm: -5, socialVsIntro: -3, diligentVsFree: -2 } },
       },
     },
+  },
+
+  // ── 라디오 이벤트 ─────────────────────────────────────
+  // 하루 3번 랜덤 시각에 크루에게 팝업이 뜨고, 4시간 내 주파수 맞춤
+  RADIO_CONFIG: {
+    DAILY_COUNT: 3,
+    WINDOW_HOURS: 4,           // 팝업 유효 시간
+    MIN_GAP_HOURS: 4,          // 각 이벤트 사이 최소 간격
+    FREQ_MIN: 0,
+    FREQ_MAX: 100,
+    TOLERANCE: 3,              // ±3 오차 허용 (맞췄다 판정)
+    STAGES_ENABLED: ['TEEN', 'ADULT'],  // TEEN부터 해금
+    // 팝업에서 뜰 수 있는 채널 종류
+    CHANNELS: [
+      {
+        id: 'music',
+        label: '음악 방송',
+        desc: '오래된 연주곡이 흐른다.',
+        story: 'MARS II가 리듬에 맞춰 까닥거린다.',
+        reward: { happy: +5, bond: +3, personality: { activeVsCalm: +2 } },
+      },
+      {
+        id: 'news',
+        label: '뉴스 방송',
+        desc: '차분한 목소리가 오늘의 소식을 전한다.',
+        story: 'MARS II가 조용히 귀 기울인다.',
+        reward: { intel: +5, personality: { activeVsCalm: -2, diligentVsFree: +2 } },
+      },
+      {
+        id: 'whisper',
+        label: '속삭임',
+        desc: '누군가 아이의 이름을 부르는 것 같다.',
+        story: 'MARS II가 굳은 채 신호 너머를 바라본다.',
+        reward: { intel: +3, personality: { socialVsIntro: -3, activeVsCalm: -3 } },
+      },
+      {
+        id: 'warning',
+        label: '경고 방송',
+        desc: '반복되는 금속성 신호. 좌표 같은 숫자들.',
+        story: '"...무슨 말인지 모르겠어. 근데 무서워."',
+        reward: { intel: +7, personality: { diligentVsFree: +3, activeVsCalm: -2 } },
+      },
+      {
+        id: 'static_voice',
+        label: '잡음 속 목소리',
+        desc: '잡음 사이로 "...잊지 마..." 라는 말이 들린다.',
+        story: 'MARS II가 숨을 참는다.',
+        reward: { intel: +4, bond: +2, personality: { socialVsIntro: -2 } },
+      },
+      {
+        id: 'nostalgia',
+        label: '옛 노래',
+        desc: '아무도 부르지 않은 자장가가 흐른다.',
+        story: 'MARS II가 조용히 눈을 감는다.',
+        reward: { happy: +3, bond: +4, personality: { activeVsCalm: -3 } },
+      },
+    ],
+    MISSED_PENALTY: { happy: -3, personality: { socialVsIntro: -2 } },
   },
 
   // ── 미지의 신호 설정 ──────────────────────────────────

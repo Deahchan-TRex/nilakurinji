@@ -1038,3 +1038,280 @@ body {
   /* 명령 2열 (6개 → 3행) */
   .cmds { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ──────────────────────────────────────
+   라디오 이벤트 - ASCII 옆 신호 아이콘
+   (방사형 물결, 와이파이 스타일)
+   ────────────────────────────────────── */
+.pet-art-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.radio-icon-slot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+}
+.radio-icon-wrapper {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.radio-core {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #03B352;
+  box-shadow: 0 0 4px #03B352;
+  z-index: 2;
+}
+.radio-wave {
+  position: absolute;
+  border: 1px solid #03B352;
+  border-radius: 50%;
+  opacity: 0;
+  animation: radioWave 2.2s ease-out infinite;
+}
+.radio-wave.r1 { animation-delay: 0s; width: 10px; height: 10px; }
+.radio-wave.r2 { animation-delay: 0.5s; width: 18px; height: 18px; }
+.radio-wave.r3 { animation-delay: 1.0s; width: 26px; height: 26px; }
+
+@keyframes radioWave {
+  0%   { transform: scale(0.4); opacity: 0.9; }
+  50%  { opacity: 0.5; }
+  100% { transform: scale(1.3); opacity: 0; }
+}
+
+/* ──────────────────────────────────────
+   라디오 팝업 (CMD 터미널 스타일)
+   ────────────────────────────────────── */
+.radio-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(92vw, 480px);
+  background: #050a07;
+  border: 1px solid #5fb37a;
+  box-shadow: 0 0 32px rgba(3, 179, 82, 0.3), 0 0 0 1px rgba(3, 179, 82, 0.15);
+  color: #03B352;
+  font-family: 'Courier New', monospace;
+  z-index: 10000;
+  animation: radioGlitchIn 0.4s ease-out;
+}
+@keyframes radioGlitchIn {
+  0%   { transform: translate(-50%, -50%) scale(0.95); opacity: 0; filter: blur(2px); }
+  50%  { transform: translate(-48%, -52%) scale(1.01); opacity: 0.7; filter: blur(0); }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 1; filter: blur(0); }
+}
+
+.radio-popup-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: #0a1410;
+  border-bottom: 1px solid #2d5a3e;
+  font-size: 12px;
+  color: #5fb37a;
+}
+.radio-close {
+  cursor: pointer;
+  letter-spacing: 3px;
+  color: #8fb39a;
+  font-size: 12px;
+  user-select: none;
+}
+.radio-close:hover { color: #e8a853; }
+
+.radio-popup-body {
+  padding: 14px 16px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.radio-terminal-line {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #c9c9c9;
+  margin-bottom: 2px;
+}
+.radio-terminal-line.dim { color: #5fb37a; opacity: 0.75; }
+.radio-terminal-line.warn { color: #e8a853; }
+.radio-terminal-line.good {
+  color: #03B352;
+  font-weight: bold;
+  text-shadow: 0 0 6px #03B352;
+}
+
+.radio-signal-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 6px;
+  padding: 8px 10px;
+  background: #0a1410;
+  border: 1px dotted #2d5a3e;
+}
+.radio-signal-label {
+  color: #5fb37a;
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+.radio-signal-bars {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+}
+.radio-bar {
+  width: 8px;
+  height: 14px;
+  background: #1a3d28;
+  border-radius: 1px;
+}
+.radio-bar.on {
+  background: #03B352;
+  box-shadow: 0 0 4px #03B352;
+}
+.radio-freq-label {
+  color: #e8a853;
+  font-size: 11px;
+  font-family: monospace;
+  min-width: 72px;
+  text-align: right;
+}
+
+/* 드래그 슬라이더 */
+.radio-slider-track {
+  position: relative;
+  height: 36px;
+  margin: 16px 4px 4px;
+  background: #0a1410;
+  border: 1px solid #2d5a3e;
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+.radio-slider-marks {
+  position: absolute;
+  top: 50%;
+  left: 4%;
+  right: 4%;
+  height: 1px;
+  background: repeating-linear-gradient(
+    to right,
+    #2d5a3e 0 1px,
+    transparent 1px 10%
+  );
+  transform: translateY(-50%);
+}
+.radio-slider-knob {
+  position: absolute;
+  top: 0;
+  width: 14px;
+  height: 100%;
+  background: #03B352;
+  box-shadow: 0 0 6px #03B352;
+  cursor: grab;
+  transform: translateX(-50%);
+  transition: left 0.05s linear;
+}
+.radio-slider-knob:active { cursor: grabbing; }
+
+.radio-slider-axis {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4px;
+  color: #5fb37a;
+  font-size: 10px;
+  opacity: 0.6;
+  margin-bottom: 12px;
+}
+
+.radio-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 16px;
+  justify-content: center;
+}
+.radio-btn {
+  padding: 10px 20px;
+  background: transparent;
+  border: 1px solid #03B352;
+  color: #03B352;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.15s;
+}
+.radio-btn:hover {
+  background: #0a3818;
+  box-shadow: 0 0 6px rgba(3, 179, 82, 0.5);
+}
+.radio-btn:disabled {
+  border-color: #333;
+  color: #555;
+  cursor: not-allowed;
+}
+
+/* ──────────────────────────────────────
+   관리자 패널 카테고리 그룹 (접기/펴기)
+   ────────────────────────────────────── */
+.admin-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+.admin-group {
+  border: 1px solid #2d5a3e;
+  background: #0a1410;
+}
+.admin-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  background: #0a1410;
+  color: #8fb39a;
+  font-size: 11px;
+  font-family: inherit;
+  user-select: none;
+  transition: background 0.1s;
+}
+.admin-group-head:hover {
+  background: #0f2018;
+  color: #03B352;
+}
+.admin-group-arrow {
+  color: #5fb37a;
+  font-size: 10px;
+  width: 10px;
+  display: inline-block;
+}
+.admin-group-label {
+  letter-spacing: 1px;
+}
+.admin-group-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease-out;
+  padding: 0 6px;
+}
+.admin-group.open .admin-group-body {
+  max-height: 500px;
+  padding: 4px 6px 6px;
+}
+.admin-group-body .cmds {
+  margin: 0;
+}
