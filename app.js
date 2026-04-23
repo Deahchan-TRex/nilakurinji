@@ -499,23 +499,38 @@ async function savePendingQuestion(raw) {
   if (!currentPet || currentPet.isDead) return;
   if (!raw || raw.trim().length < 2) return;
 
+  const text = raw.trim().slice(0, 120);
+
   currentPet.pendingQuestions = currentPet.pendingQuestions || [];
   currentPet.pendingQuestions.push({
     user: currentUser.name,
-    text: raw.trim().slice(0, 120),  // 최대 120자
+    text,
     at: Date.now(),
     answered: false,
-    answer: null,
-    answerBy: null,
-    answerAt: null,
+    answer: '',        // Firebase가 null보다 빈 문자열을 안전하게 처리
+    answerBy: '',
+    answerAt: 0,
   });
   // 최대 50개 유지 (오래된 것 삭제)
   if (currentPet.pendingQuestions.length > 50) {
     currentPet.pendingQuestions = currentPet.pendingQuestions.slice(-50);
   }
 
-  await Backend.savePet(currentPet);
-  appendSystemLog(`◎ 질문이 기록되었어. 언젠가 답이 돌아올지도 몰라.`, 'personality');
+  try {
+    await Backend.savePet(currentPet);
+    // 공용 로그에도 기록 (다른 크루도 "새 말 등록됨" 감지 가능)
+    await Backend.addLog({
+      user: currentUser.name, action: 'MSG',
+      text: `◎ "${text.slice(0, 30)}${text.length > 30 ? '...' : ''}" 남김`,
+      type: 'system',
+    });
+    appendSystemLog(`◎ 질문이 기록되었어. 언젠가 답이 돌아올지도 몰라.`, 'personality');
+    // 저장 성공 후 즉시 렌더 (낡은 상태 방지)
+    render();
+  } catch (err) {
+    console.error('[pending] 저장 실패:', err);
+    appendSystemLog(`⚠ 메시지 저장 실패 · 다시 시도해주세요`, 'warn');
+  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -3872,15 +3887,35 @@ function showFinaleAdminMenu() {
  * 펜딩 질문 목록 UI
  * - 아직 답 안 된 질문에 다른 크루가 답하거나
  * - 관리자가 직접 답하거나 일괄 삭제
+ * - 페이지별로 4개씩 표시
  */
-function showPendingQuestions() {
+function showPendingQuestions(opts = {}) {
   if (!currentPet) return;
   const existing = document.getElementById('pending-modal');
   if (existing) { existing.remove(); return; }
 
+  const PER_PAGE = 4;
+  const unansweredPage = opts.unansweredPage ?? 0;
+  const answeredPage = opts.answeredPage ?? 0;
+
+  // 기존 데이터 정상화 (answered가 undefined면 false로)
   const all = currentPet.pendingQuestions || [];
+  for (const q of all) {
+    if (q.answered === undefined) q.answered = false;
+    if (q.answer === undefined || q.answer === null) q.answer = '';
+    if (q.answerBy === undefined || q.answerBy === null) q.answerBy = '';
+    if (q.answerAt === undefined || q.answerAt === null) q.answerAt = 0;
+  }
   const unanswered = all.filter(q => !q.answered);
   const answered = all.filter(q => q.answered);
+
+  // 페이지 슬라이스 (역순 정렬: 최신부터)
+  const unansweredReversed = unanswered.slice().reverse();
+  const answeredReversed = answered.slice().reverse();
+  const unansweredTotalPages = Math.max(1, Math.ceil(unansweredReversed.length / PER_PAGE));
+  const answeredTotalPages = Math.max(1, Math.ceil(answeredReversed.length / PER_PAGE));
+  const unansweredSlice = unansweredReversed.slice(unansweredPage * PER_PAGE, (unansweredPage + 1) * PER_PAGE);
+  const answeredSlice = answeredReversed.slice(answeredPage * PER_PAGE, (answeredPage + 1) * PER_PAGE);
 
   const modal = document.createElement('div');
   modal.id = 'pending-modal';
@@ -3902,7 +3937,7 @@ function showPendingQuestions() {
         <div style="color:#666;font-size:12px;text-align:center;padding:20px 0;">
           아직 답 기다리는 말이 없어.
         </div>
-      ` : unanswered.slice().reverse().map((q, revIdx) => {
+      ` : unansweredSlice.map((q) => {
         const idx = all.indexOf(q);  // 원본 배열 인덱스
         const timeStr = new Date(q.at).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
         return `
@@ -3936,12 +3971,28 @@ function showPendingQuestions() {
         `;
       }).join('')}
 
+      ${unansweredTotalPages > 1 ? `
+        <div style="display:flex;justify-content:center;align-items:center;gap:8px;margin:10px 0;font-size:11px;">
+          <button class="pending-page-btn" data-target="unanswered" data-page="${unansweredPage - 1}"
+            ${unansweredPage === 0 ? 'disabled' : ''}
+            style="background:transparent;border:1px solid ${unansweredPage === 0 ? '#2d5a3e' : '#5fb37a'};
+            color:${unansweredPage === 0 ? '#333' : '#5fb37a'};padding:4px 10px;font-family:inherit;
+            cursor:${unansweredPage === 0 ? 'not-allowed' : 'pointer'};">◀ 이전</button>
+          <span style="color:#8fb39a;">${unansweredPage + 1} / ${unansweredTotalPages}</span>
+          <button class="pending-page-btn" data-target="unanswered" data-page="${unansweredPage + 1}"
+            ${unansweredPage >= unansweredTotalPages - 1 ? 'disabled' : ''}
+            style="background:transparent;border:1px solid ${unansweredPage >= unansweredTotalPages - 1 ? '#2d5a3e' : '#5fb37a'};
+            color:${unansweredPage >= unansweredTotalPages - 1 ? '#333' : '#5fb37a'};padding:4px 10px;font-family:inherit;
+            cursor:${unansweredPage >= unansweredTotalPages - 1 ? 'not-allowed' : 'pointer'};">다음 ▶</button>
+        </div>
+      ` : ''}
+
       ${answered.length > 0 ? `
         <div style="margin-top:16px;border-top:1px dotted #2d5a3e;padding-top:10px;">
           <div style="color:#8fb39a;font-size:11px;font-weight:bold;margin-bottom:8px;">
             ◢ 답한 말 (${answered.length}개)
           </div>
-          ${answered.slice().reverse().map(q => `
+          ${answeredSlice.map(q => `
             <div class="pending-answered-row" data-qidx="${all.indexOf(q)}"
               style="padding:8px 10px;margin-bottom:6px;background:#050a07;border:1px solid #1a3d28;font-size:11px;line-height:1.6;cursor:pointer;">
               <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -3950,6 +4001,22 @@ function showPendingQuestions() {
               </div>
             </div>
           `).join('')}
+
+          ${answeredTotalPages > 1 ? `
+            <div style="display:flex;justify-content:center;align-items:center;gap:8px;margin:10px 0;font-size:11px;">
+              <button class="pending-page-btn" data-target="answered" data-page="${answeredPage - 1}"
+                ${answeredPage === 0 ? 'disabled' : ''}
+                style="background:transparent;border:1px solid ${answeredPage === 0 ? '#2d5a3e' : '#8fb39a'};
+                color:${answeredPage === 0 ? '#333' : '#8fb39a'};padding:4px 10px;font-family:inherit;
+                cursor:${answeredPage === 0 ? 'not-allowed' : 'pointer'};">◀ 이전</button>
+              <span style="color:#8fb39a;">${answeredPage + 1} / ${answeredTotalPages}</span>
+              <button class="pending-page-btn" data-target="answered" data-page="${answeredPage + 1}"
+                ${answeredPage >= answeredTotalPages - 1 ? 'disabled' : ''}
+                style="background:transparent;border:1px solid ${answeredPage >= answeredTotalPages - 1 ? '#2d5a3e' : '#8fb39a'};
+                color:${answeredPage >= answeredTotalPages - 1 ? '#333' : '#8fb39a'};padding:4px 10px;font-family:inherit;
+                cursor:${answeredPage >= answeredTotalPages - 1 ? 'not-allowed' : 'pointer'};">다음 ▶</button>
+            </div>
+          ` : ''}
         </div>
       ` : ''}
     </div>
@@ -3994,7 +4061,7 @@ function showPendingQuestions() {
       });
       showToast(`${q.user}에게 답이 전해졌어`, 'personality');
       modal.remove();
-      setTimeout(showPendingQuestions, 200);
+      setTimeout(() => showPendingQuestions({ unansweredPage, answeredPage }), 200);
     });
   });
 
@@ -4005,7 +4072,7 @@ function showPendingQuestions() {
       currentPet.pendingQuestions.splice(idx, 1);
       await Backend.savePet(currentPet);
       modal.remove();
-      setTimeout(showPendingQuestions, 200);
+      setTimeout(() => showPendingQuestions({ unansweredPage, answeredPage }), 200);
     });
   });
 
@@ -4016,6 +4083,22 @@ function showPendingQuestions() {
       const q = currentPet.pendingQuestions?.[qidx];
       if (!q || !q.answered) return;
       showAnsweredDetail(q);
+    });
+  });
+
+  // 페이지 이동 버튼
+  modal.querySelectorAll('.pending-page-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      const target = btn.dataset.target;
+      const page = parseInt(btn.dataset.page);
+      modal.remove();
+      setTimeout(() => {
+        showPendingQuestions({
+          unansweredPage: target === 'unanswered' ? page : unansweredPage,
+          answeredPage: target === 'answered' ? page : answeredPage,
+        });
+      }, 50);
     });
   });
 }
