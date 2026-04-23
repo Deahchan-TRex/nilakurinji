@@ -167,36 +167,99 @@ export const Backend = {
   },
 
   /**
-   * 펜딩 질문 답변 원자적 저장 (답변도 동일한 경쟁 조건 위험)
+   * 펜딩 질문 답변 원자적 저장
+   * @param {string} questionId - `${user}_${at}` 식별자
+   * @param {string} answer - 답변 내용
+   * @param {string} answerBy - 답한 유저
+   * @param {string|null} speechText - 아이 개인 대사 (null이면 안 띄움)
+   * @param {object} questionInfo - fallback용 { user, text }
    */
-  async answerPendingQuestion(questionIndex, answer, answerBy) {
+  async answerPendingQuestion(questionId, answer, answerBy, speechText, questionInfo = null) {
     if (CONFIG.LOCAL_TEST_MODE) {
       const raw = localStorage.getItem('nk_pet');
       const pet = raw ? JSON.parse(raw) : {};
-      if (pet.pendingQuestions?.[questionIndex]) {
-        pet.pendingQuestions[questionIndex].answered = true;
-        pet.pendingQuestions[questionIndex].answer = answer;
-        pet.pendingQuestions[questionIndex].answerBy = answerBy;
-        pet.pendingQuestions[questionIndex].answerAt = Date.now();
+      const list = pet.pendingQuestions || [];
+      let target = list.find(q => `${q.user}_${q.at}` === questionId);
+      if (!target && questionInfo) {
+        target = list.find(q => q.user === questionInfo.user && q.text === questionInfo.text && !q.answered);
+      }
+      if (target) {
+        target.answered = true;
+        target.answer = answer;
+        target.answerBy = answerBy;
+        target.answerAt = Date.now();
+      }
+      if (target && speechText) {
+        pet.lastSpeechBy = pet.lastSpeechBy || {};
+        pet.lastSpeechBy[target.user] = {
+          text: speechText, at: Date.now(), to: target.user,
+        };
       }
       localStorage.setItem('nk_pet', JSON.stringify(pet));
       listeners.pet.forEach(cb => cb(pet));
-      return;
+      return { found: !!target };
     }
     try {
       const docRef = db._fns.doc(db, 'pet', 'main');
+      let found = false;
+      let debugList = null;
+      let matchedInfo = null;
       await db._fns.runTransaction(db, async (tx) => {
         const snap = await tx.get(docRef);
         const pet = snap.exists() ? snap.data() : {};
-        if (pet.pendingQuestions?.[questionIndex]) {
-          pet.pendingQuestions[questionIndex].answered = true;
-          pet.pendingQuestions[questionIndex].answer = answer;
-          pet.pendingQuestions[questionIndex].answerBy = answerBy;
-          pet.pendingQuestions[questionIndex].answerAt = Date.now();
+        const list = pet.pendingQuestions || [];
+        debugList = list.map(q => ({
+          id: `${q.user}_${q.at}`, type: typeof q.at, at: q.at, answered: q.answered, text: q.text?.slice(0, 20)
+        }));
+
+        // 1차: 정확 매칭
+        let target = list.find(q => `${q.user}_${q.at}` === questionId);
+
+        // 2차: at 숫자 변환 매칭 (Timestamp 이슈 대비)
+        if (!target) {
+          target = list.find(q => {
+            const atNum = q.at?.seconds ? q.at.seconds * 1000 : Number(q.at);
+            return `${q.user}_${atNum}` === questionId;
+          });
+        }
+
+        // 3차: user + text 완전 일치 + 답 안 됨 (text는 trim/정규화 후 비교)
+        if (!target && questionInfo) {
+          const normalize = s => (s || '').trim().replace(/\s+/g, ' ');
+          const qText = normalize(questionInfo.text);
+          target = list.find(q =>
+            q.user === questionInfo.user &&
+            normalize(q.text) === qText &&
+            q.answered !== true
+          );
+        }
+
+        // 4차: 제거 (user only 매칭은 위험 - 이미 답한 질문 덮어쓰기 위험)
+
+        if (target) {
+          target.answered = true;
+          target.answer = answer;
+          target.answerBy = answerBy;
+          target.answerAt = Date.now();
+          found = true;
+          matchedInfo = { user: target.user, text: target.text?.slice(0, 30), at: target.at };
+          if (speechText) {
+            pet.lastSpeechBy = pet.lastSpeechBy || {};
+            pet.lastSpeechBy[target.user] = {
+              text: speechText, at: Date.now(), to: target.user,
+            };
+          }
         }
         tx.set(docRef, pet);
       });
-      console.log('[pending] 답변 트랜잭션 성공');
+      if (found) {
+        console.log('[pending] 답변 트랜잭션 성공 - 매칭된 질문:', matchedInfo);
+      } else {
+        console.warn('[pending] 대상 질문 찾을 수 없음. questionId:', questionId);
+        console.warn('[pending] questionInfo:', questionInfo);
+        console.warn('[pending] 서버 리스트:', debugList);
+      }
+      return { found };
     } catch (err) {
       console.error('[pending] 답변 트랜잭션 실패:', err);
       throw err;
@@ -204,14 +267,14 @@ export const Backend = {
   },
 
   /**
-   * 펜딩 질문 삭제 (관리자용)
+   * 펜딩 질문 삭제 (유저/시각 식별)
    */
-  async deletePendingQuestion(questionIndex) {
+  async deletePendingQuestion(questionId) {
     if (CONFIG.LOCAL_TEST_MODE) {
       const raw = localStorage.getItem('nk_pet');
       const pet = raw ? JSON.parse(raw) : {};
       if (pet.pendingQuestions) {
-        pet.pendingQuestions.splice(questionIndex, 1);
+        pet.pendingQuestions = pet.pendingQuestions.filter(q => `${q.user}_${q.at}` !== questionId);
       }
       localStorage.setItem('nk_pet', JSON.stringify(pet));
       listeners.pet.forEach(cb => cb(pet));
@@ -223,7 +286,7 @@ export const Backend = {
         const snap = await tx.get(docRef);
         const pet = snap.exists() ? snap.data() : {};
         if (pet.pendingQuestions) {
-          pet.pendingQuestions.splice(questionIndex, 1);
+          pet.pendingQuestions = pet.pendingQuestions.filter(q => `${q.user}_${q.at}` !== questionId);
         }
         tx.set(docRef, pet);
       });
