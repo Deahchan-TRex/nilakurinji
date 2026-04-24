@@ -1089,12 +1089,13 @@ function render() {
     }
   }
 
-  // 성격
+  // 성격 - 호출 규칙: (음수쪽 라벨, 값, 양수쪽 라벨)
+  // activeVsCalm 양수=활발, socialVsIntro 양수=사교, ...
   document.getElementById('persona').innerHTML = `
-    ${personaRow('활발', currentPet.personality.activeVsCalm, '차분')}
-    ${personaRow('탐욕', currentPet.personality.greedVsTemperance, '절제')}
-    ${personaRow('사교', currentPet.personality.socialVsIntro, '내향')}
-    ${personaRow('성실', currentPet.personality.diligentVsFree, '자유')}
+    ${personaRow('차분', currentPet.personality.activeVsCalm, '활발')}
+    ${personaRow('절제', currentPet.personality.greedVsTemperance, '탐욕')}
+    ${personaRow('내향', currentPet.personality.socialVsIntro, '사교')}
+    ${personaRow('자유', currentPet.personality.diligentVsFree, '성실')}
     <div class="persona-label">◆ ${personalityLabel(currentPet)} ◆</div>
   `;
 
