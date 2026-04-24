@@ -383,6 +383,7 @@ function renderCommandButtons() {
           <button class="cmd admin" data-act="minigame">🎯 GAME</button>
           <button class="cmd admin" data-act="pending">💭 말함</button>
           <button class="cmd admin" data-act="radio-test">📻 라디오 테스트</button>
+          <button class="cmd admin" data-act="noise-test">⚡ 노이즈 테스트</button>
         `,
       },
       {
@@ -459,6 +460,7 @@ function renderCommandButtons() {
       else if (act === 'minigame') showMinigameHub();
       else if (act === 'pending') showPendingQuestions();
       else if (act === 'radio-test') testRadioPopup();
+      else if (act === 'noise-test') triggerNoiseEffect();
       else if (act === 'finale') {
         // 이미 봉인된 경우 편지 보기, 아니면 답장 UI
         if (currentPet?.finaleSealed) showSealedLetter();
@@ -494,7 +496,76 @@ function renderCommandButtons() {
 // ────────────────────────────────────────────────────────────
 // 프롬프트 명령 처리
 // ────────────────────────────────────────────────────────────
+/**
+ * 화면 전체 노이즈 이펙트 (순간적)
+ * - TEEN+ CMD '화성' 또는 OBJECT 테스트용
+ * - 약 0.8초 지속
+ */
+function triggerNoiseEffect() {
+  const existing = document.getElementById('noise-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'noise-overlay';
+  overlay.className = 'noise-overlay';
+
+  // 정적 SVG 노이즈 (turbulence 필터)
+  overlay.innerHTML = `
+    <svg width="100%" height="100%" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+      <filter id="noise-filter">
+        <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" stitchTiles="stitch"/>
+        <feColorMatrix type="matrix" values="
+          0 0 0 0 0.1
+          0 0 0 0 0.8
+          0 0 0 0 0.3
+          0 0 0 0.45 0
+        "/>
+      </filter>
+      <rect width="100%" height="100%" filter="url(#noise-filter)"/>
+    </svg>
+    <div class="noise-scanline"></div>
+  `;
+  document.body.appendChild(overlay);
+
+  // 치지직 소리
+  try {
+    if (!sfxAudioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) sfxAudioCtx = new AC();
+    }
+    if (sfxAudioCtx) {
+      if (sfxAudioCtx.state === 'suspended') sfxAudioCtx.resume();
+      const ctx = sfxAudioCtx;
+      const bufSize = ctx.sampleRate * 0.6;
+      const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.15;
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      src.start();
+      src.stop(ctx.currentTime + 0.6);
+    }
+  } catch (err) { /* ignore */ }
+
+  setTimeout(() => overlay.remove(), 800);
+}
+
 function handleCommand(raw) {
+  // 특수 키워드: '화성' → 노이즈 이펙트 (TEEN 이상, OBJECT는 항상)
+  if (raw.trim() === '화성') {
+    if (currentUser?.isAdmin ||
+        currentPet?.stage === 'TEEN' ||
+        currentPet?.stage === 'ADULT') {
+      triggerNoiseEffect();
+      return;
+    }
+  }
+
   // 1) 인사말 매칭 먼저 (자연어 우선)
   const greetKey = matchGreeting(raw);
   if (greetKey) return handleGreeting(greetKey, raw);
@@ -1163,16 +1234,32 @@ function renderReviveDots(count) {
 }
 
 function personaRow(left, val, right) {
-  const v = val || 0;
-  // -100~+100 → 0~4 인덱스
-  const idx = Math.max(0, Math.min(4, Math.round(((v + 100) / 200) * 4)));
-  let dots = '';
-  for (let i = 0; i < 5; i++) {
-    if (i === idx) dots += '<span class="me"></span>';
-    else if (i < idx) dots += '<span class="on"></span>';
-    else dots += '<span></span>';
-  }
-  return `<div class="persona-row"><span>${left}</span><span class="dots">${dots}</span><span>${right}</span></div>`;
+  const v = Math.max(-100, Math.min(100, val || 0));
+  // 양수면 오른쪽(right)으로 채워짐, 음수면 왼쪽(left)으로 채워짐
+  const percent = Math.abs(v) / 2;  // 0 ~ 50%
+  const isNeg = v < 0;
+  const isPos = v > 0;
+  // 더 강한 값일수록 진한 색
+  const intensity = Math.abs(v) / 100;  // 0 ~ 1
+  const colorRight = `rgba(3, 179, 82, ${0.4 + intensity * 0.6})`;   // 녹색
+  const colorLeft = `rgba(232, 168, 83, ${0.4 + intensity * 0.6})`;  // 주황
+  const labelColorLeft = isNeg ? '#e8a853' : '#5a6a5e';
+  const labelColorRight = isPos ? '#03B352' : '#5a6a5e';
+
+  return `
+    <div class="persona-row">
+      <span class="persona-label-side" style="color:${labelColorLeft};">◁ ${left}</span>
+      <div class="persona-gauge">
+        <div class="persona-gauge-track">
+          <div class="persona-gauge-center"></div>
+          ${isNeg ? `<div class="persona-gauge-fill-left" style="width:${percent}%;background:${colorLeft};"></div>` : ''}
+          ${isPos ? `<div class="persona-gauge-fill-right" style="width:${percent}%;background:${colorRight};"></div>` : ''}
+        </div>
+        <div class="persona-gauge-value" style="color:${v === 0 ? '#5a6a5e' : (isPos ? '#03B352' : '#e8a853')};">${v > 0 ? '+' : ''}${v}</div>
+      </div>
+      <span class="persona-label-side" style="color:${labelColorRight};">${right} ▷</span>
+    </div>
+  `;
 }
 
 function timeAgo(ts) {
@@ -1403,6 +1490,55 @@ let lastTapAt = 0;
 let tapStreakCount = 0;
 let tapStreakWindowStart = 0;
 
+/**
+ * 8bit 스타일 사운드 재생 (Web Audio API로 즉석 생성)
+ * @param {string} kind - 'happy' | 'cute' | 'angry' | 'blip'
+ */
+let sfxAudioCtx = null;
+function playSfx(kind = 'happy') {
+  try {
+    if (!sfxAudioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      sfxAudioCtx = new AC();
+    }
+    if (sfxAudioCtx.state === 'suspended') sfxAudioCtx.resume();
+
+    const ctx = sfxAudioCtx;
+    const now = ctx.currentTime;
+
+    // 사운드 프리셋: [주파수 배열, 각 음 길이(s), gain 피크]
+    const presets = {
+      happy:  { notes: [523.25, 659.25, 783.99], dur: 0.07, peak: 0.08 },  // C-E-G 아르페지오
+      cute:   { notes: [880, 1046.5], dur: 0.06, peak: 0.07 },             // A-C 짧은 2음
+      angry:  { notes: [220, 180], dur: 0.10, peak: 0.10 },                // 낮은 버징
+      blip:   { notes: [1318.5], dur: 0.05, peak: 0.05 },                  // 단음 클릭
+    };
+    const preset = presets[kind] || presets.happy;
+
+    preset.notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';  // 8bit 스타일
+      osc.frequency.value = freq;
+
+      const start = now + i * preset.dur;
+      const end = start + preset.dur;
+      // envelope: attack 짧게, 빠른 감쇠
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(preset.peak, start + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.001, end);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(end + 0.02);
+    });
+  } catch (err) {
+    // 오디오 실패는 무시 (게임 동작에 영향 없음)
+  }
+}
+
 function handlePetTap() {
   if (!currentPet || currentPet.isDead) return;
 
@@ -1453,8 +1589,9 @@ function handlePetTap() {
       (currentPet.personality.socialVsIntro || 0) - 3);  // 내향
     currentPet.happy = Math.max(0, currentPet.happy - 3);
     currentPet.bond = Math.max(0, (currentPet.bond || 0) - 1);
-    // 화난 이모티콘
+    // 화난 이모티콘 + 낮은 버징 소리
     showEmote('angry');
+    playSfx('angry');
   } else {
     speech = pickTapSpeech(currentPet, {
       user: currentUser.name, name: currentPet.name, fav, least,
@@ -1463,6 +1600,14 @@ function handlePetTap() {
     const tapEmotes = ['heart2', 'sparkle', 'note', 'bubble'];
     const picked = tapEmotes[Math.floor(Math.random() * tapEmotes.length)];
     showEmote(picked);
+    // 단계별 사운드: EGG 조용, BABY 귀여운 음, CHILD+ 밝은 아르페지오
+    if (currentPet.stage === 'EGG') {
+      playSfx('blip');
+    } else if (currentPet.stage === 'BABY') {
+      playSfx('cute');
+    } else {
+      playSfx('happy');
+    }
     // 아주 가벼운 부가 스탯 (값 폭주 방지)
     currentPet.bond = Math.min(100, (currentPet.bond || 0) + 0.05);
     currentPet.intel = Math.min(100, (currentPet.intel || 0) + 0.03);
@@ -4338,6 +4483,9 @@ function showPendingQuestions(opts = {}) {
 /**
  * MSG 로그 감사 - 펜딩 질문과 로그를 비교해서 누락 항목 찾기
  */
+// MSG 감사에서 '무시'된 항목 (세션 동안만, user_atMs 키)
+const msgAuditIgnoredKeys = new Set();
+
 function showMsgLogAudit() {
   if (!currentUser?.isAdmin) return;
   const existing = document.getElementById('msg-audit-modal');
@@ -4349,11 +4497,19 @@ function showMsgLogAudit() {
   // 로그와 펜딩을 비교: 로그엔 있는데 펜딩엔 없는 것 찾기
   const missingOnes = [];
   for (const log of msgLogs) {
+    // [복원] 로그는 수동 등록이므로 스킵
+    if (log.text?.startsWith('◎ [복원]')) continue;
+
     // 로그 텍스트 예: `◎ "네 첫 기억이 뭐야?" 남김`
     const m = log.text?.match(/"([^"]+)"/);
     if (!m) continue;
     const logText = m[1];  // 30자 잘린 상태
     const user = log.user;
+
+    // 세션 무시 필터
+    const ignoreKey = `${user}_${log.atMs}`;
+    if (msgAuditIgnoredKeys.has(ignoreKey)) continue;
+
     // 펜딩에 같은 user + text 시작이 같은 것 있는지
     const found = pending.some(q =>
       q.user === user && q.text.startsWith(logText.replace(/\.\.\.$/, ''))
@@ -4382,7 +4538,7 @@ function showMsgLogAudit() {
           <div style="color:#e8a853;font-size:12px;font-weight:bold;margin-bottom:8px;">
             ⚠ 누락된 질문 ${missingOnes.length}개
           </div>
-          ${missingOnes.map(log => {
+          ${missingOnes.map((log, i) => {
             const time = new Date(log.atMs).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
             return `
               <div style="padding:8px 10px;margin-bottom:6px;background:#0a0a05;border:1px dotted #c9a06b;font-size:11px;line-height:1.6;">
@@ -4391,15 +4547,28 @@ function showMsgLogAudit() {
                   <span style="color:#666;font-size:10px;">${time}</span>
                 </div>
                 <div style="color:#c9c9c9;">"${(log.logText || '').replace(/</g, '&lt;')}"</div>
-                <div style="color:#c97d5f;font-size:10px;margin-top:4px;">
+                <div style="color:#c97d5f;font-size:10px;margin-top:4px;margin-bottom:6px;">
                   → 펜딩 목록에 없음 (저장 실패 또는 삭제됨)
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                  <button class="msg-audit-restore" data-idx="${i}"
+                    style="flex:1;background:#0a3818;border:1px solid #03B352;color:#03B352;
+                    padding:6px;font-family:inherit;font-size:11px;cursor:pointer;min-width:140px;">
+                    + 펜딩에 수동 추가
+                  </button>
+                  <button class="msg-audit-ignore" data-idx="${i}"
+                    style="background:transparent;border:1px solid #666;color:#888;
+                    padding:6px 10px;font-family:inherit;font-size:11px;cursor:pointer;"
+                    title="이번 세션에서만 목록에서 숨김">
+                    무시
+                  </button>
                 </div>
               </div>
             `;
           }).join('')}
           <div style="color:#c9a06b;font-size:10px;margin-top:8px;line-height:1.5;">
-            복원하려면: 이 텍스트를 기억해두고 해당 크루에게 다시 질문하도록 요청하거나<br>
-            관리자가 "말함" 패널에서 수동으로 기록.
+            '+ 펜딩에 수동 추가'로 질문을 복원할 수 있습니다.<br>
+            전체 텍스트 입력 가능 (로그는 30자까지만 표시됨).
           </div>
         </div>
       ` : `
@@ -4434,6 +4603,62 @@ function showMsgLogAudit() {
   }
 
   document.getElementById('msg-audit-close').addEventListener('click', () => modal.remove());
+
+  // 복원: 누락 항목을 pendingQuestions에 수동 추가
+  modal.querySelectorAll('.msg-audit-restore').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt(btn.dataset.idx);
+      const log = missingOnes[idx];
+      if (!log) return;
+
+      // 로그 원문에서 "..."로 잘린 경우 있으니 전체 텍스트 입력받음
+      const logTextClean = (log.logText || '').replace(/\.\.\.$/, '');
+      const fullText = prompt(
+        `${log.user}의 질문을 펜딩에 수동 추가합니다.\n\n` +
+        `원본 텍스트 (로그 기록):\n"${logTextClean}"\n\n` +
+        `전체 질문 텍스트를 입력해주세요 (120자 이내):`,
+        logTextClean
+      );
+      if (!fullText || !fullText.trim()) return;
+      const text = fullText.trim().slice(0, 120);
+
+      try {
+        await Backend.appendPendingQuestion({
+          user: log.user,
+          text,
+          at: log.atMs || Date.now(),  // 원본 시각 사용
+          answered: false,
+          answer: '',
+          answerBy: '',
+          answerAt: 0,
+        });
+        await Backend.addLog({
+          user: currentUser.name, action: 'MSG',
+          text: `◎ [복원] ${log.user}의 "${text.slice(0, 30)}${text.length > 30 ? '...' : ''}" 수동 등록`,
+          type: 'system',
+        });
+        showToast(`${log.user}의 질문 복원 완료`, 'personality');
+        // 감사 다시 실행 (목록 갱신)
+        modal.remove();
+        setTimeout(showMsgLogAudit, 200);
+      } catch (err) {
+        console.error('[msg-audit] 복원 실패:', err);
+        showToast(`⚠ 복원 실패 · 다시 시도해주세요`, 'warn');
+      }
+    });
+  });
+
+  // 무시: 세션 내에서만 숨김 (새로고침하면 다시 보임)
+  modal.querySelectorAll('.msg-audit-ignore').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx);
+      const log = missingOnes[idx];
+      if (!log) return;
+      msgAuditIgnoredKeys.add(`${log.user}_${log.atMs}`);
+      modal.remove();
+      setTimeout(showMsgLogAudit, 100);
+    });
+  });
 }
 
 /**

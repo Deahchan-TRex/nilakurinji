@@ -24,6 +24,15 @@ export function tickStats(pet) {
   pet.energy  = Math.max(0, pet.energy  - decay.energy  * hoursElapsed * rate);
   pet.hygiene = Math.max(0, pet.hygiene - decay.hygiene * hoursElapsed * rate);
 
+  // STRENGTH/INTEL: 하루 -5 (시간당 -0.21) → 자주 운동/대화 필요
+  // BOND: 하루 -1 (시간당 -0.042) → 유대는 천천히 식음
+  // EGG에서는 감소 안 함
+  if (pet.stage !== 'EGG') {
+    pet.strength = Math.max(0, (pet.strength || 0) - 0.21 * hoursElapsed);
+    pet.intel    = Math.max(0, (pet.intel    || 0) - 0.21 * hoursElapsed);
+    pet.bond     = Math.max(0, (pet.bond     || 0) - 0.042 * hoursElapsed);
+  }
+
   pet.lastTickAt = now;
 
   // 사망: 3개 이상 스탯이 0 (EGG 단계는 사망 안 함 - 너무 이르니까)
