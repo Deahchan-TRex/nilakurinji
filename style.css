@@ -1427,3 +1427,78 @@ body {
   0%   { transform: translateY(0); }
   100% { transform: translateY(8px); }
 }
+
+/* ──────────────────────────────────────
+   대사 타자기 효과 (게임 채팅 느낌)
+   ────────────────────────────────────── */
+.speech-body.speech-typing::after {
+  content: '▮';
+  color: #03B352;
+  margin-left: 2px;
+  animation: speechCursor 0.6s steps(1) infinite;
+}
+@keyframes speechCursor {
+  0%, 50%    { opacity: 1; }
+  50.1%, 100% { opacity: 0; }
+}
+
+/* ──────────────────────────────────────
+   액션 피드백 - ASCII 움직임
+   ────────────────────────────────────── */
+/* FEED: 위아래 냠냠 */
+.pet-art.act-feed {
+  animation: actFeed 0.8s ease-in-out;
+}
+@keyframes actFeed {
+  0%, 100% { transform: translateY(0); }
+  20%      { transform: translateY(2px); }
+  40%      { transform: translateY(-2px); }
+  60%      { transform: translateY(2px); }
+  80%      { transform: translateY(-1px); }
+}
+
+/* PLAY: 좌우 깡총깡총 */
+.pet-art.act-play {
+  animation: actPlay 0.8s ease-in-out;
+}
+@keyframes actPlay {
+  0%, 100% { transform: translateX(0) translateY(0); }
+  25%      { transform: translateX(-4px) translateY(-3px); }
+  50%      { transform: translateX(4px) translateY(-4px); }
+  75%      { transform: translateX(-2px) translateY(-2px); }
+}
+
+/* SLEEP: 천천히 깊이 가라앉 */
+.pet-art.act-sleep {
+  animation: actSleep 0.8s ease-out;
+}
+@keyframes actSleep {
+  0%   { transform: translateY(0); opacity: 1; }
+  50%  { transform: translateY(3px); opacity: 0.7; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+/* CLEAN: 좌우 흔들기 (물기 털기) */
+.pet-art.act-clean {
+  animation: actClean 0.8s ease-in-out;
+}
+@keyframes actClean {
+  0%, 100% { transform: rotate(0deg); }
+  15%      { transform: rotate(-3deg); }
+  30%      { transform: rotate(3deg); }
+  45%      { transform: rotate(-3deg); }
+  60%      { transform: rotate(2deg); }
+  75%      { transform: rotate(-1deg); }
+}
+
+/* TRAIN: 팔 흔들기 (운동 느낌, 스케일 펄스) */
+.pet-art.act-train {
+  animation: actTrain 0.8s ease-in-out;
+}
+@keyframes actTrain {
+  0%, 100% { transform: scale(1); }
+  20%      { transform: scale(1.05); }
+  40%      { transform: scale(0.98); }
+  60%      { transform: scale(1.05); }
+  80%      { transform: scale(0.98); }
+}

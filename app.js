@@ -738,6 +738,12 @@ async function handleAction(action, submenuItem = null) {
   // 이모티콘 표시
   emoteForAction(action);
 
+  // ASCII 흔들기 애니메이션 (액션별로 다른 움직임)
+  playActionAnimation(action);
+
+  // 액션별 8bit 사운드
+  playActionSfx(action);
+
   // 성격 변화 감지 → 토스트
   const personaDelta = CONFIG.PERSONALITY_DELTA[action] || {};
   const personaLabels = {
@@ -881,9 +887,11 @@ function render() {
     `DAY ${String(progress.day).padStart(2,'0')} · ${progress.hoursLived}h`;
 
   // 캐릭터 아트 (표정 동적)
-  // 팔 벌리기 중에는 덮어쓰지 않음 (pet-hug 클래스로 판정)
+  // 팔 벌리기/액션 애니메이션 중에는 덮어쓰지 않음
   const petArtEl = document.getElementById('pet-art');
-  if (!petArtEl.classList.contains('pet-hug')) {
+  const isAnimating = petArtEl.classList.contains('pet-hug')
+    || petArtEl.className.match(/act-(feed|play|sleep|clean|train)/);
+  if (!isAnimating) {
     petArtEl.textContent = renderTeddy(currentPet);
   }
   document.getElementById('stage-badge').textContent = currentPet.stage;
@@ -1022,14 +1030,18 @@ function render() {
       && lastSpeech.to !== '__sys__'
       && lastSpeech.to !== '__admin__'
       && lastSpeech.to !== currentUser.key;
+    const speechText = lastSpeech?.text || '…';
+    const speechKey = lastSpeech ? `${lastSpeech.at}_${speechText.slice(0, 10)}` : '_';
     speechWrapper.innerHTML = `
       <div class="speech">
         <div class="speech-head">
           <span>▶ ${currentPet.name} · ${lastSpeech ? timeAgo(lastSpeech.at) : '–'}${showAddressee ? ' · ' + getUserNameByKey(lastSpeech.to) + '에게' : ''}</span>
         </div>
-        <div class="speech-body">${lastSpeech?.text || '…'}</div>
+        <div class="speech-body" id="speech-body" data-speech-key="${speechKey}">${speechText}</div>
       </div>
     `;
+    // 타자기 연출 (새 대사일 때만)
+    startSpeechTypewriter();
   }
 
   // 로그 (최신 로그 ID 기억해서 새 로그만 애니메이션)
@@ -1409,15 +1421,17 @@ function startBlinking() {
     if (!currentPet || currentPet.isDead || currentPet.stage === 'EGG') return;
     const petArt = document.getElementById('pet-art');
     if (!petArt) return;
-    // 팔 벌리기 중이면 깜빡이지 않음
+    // 팔 벌리기/액션 애니메이션 중에는 깜빡이지 않음
     if (petArt.classList.contains('pet-hug')) return;
+    if (petArt.className.match(/act-(feed|play|sleep|clean|train)/)) return;
 
     // 깜빡임 한 번
     petArt.textContent = renderTeddyBlink(currentPet);
     setTimeout(() => {
       if (!currentPet) return;
       const art = document.getElementById('pet-art');
-      if (art && !art.classList.contains('pet-hug')) {
+      if (art && !art.classList.contains('pet-hug')
+          && !art.className.match(/act-(feed|play|sleep|clean|train)/)) {
         art.textContent = renderTeddy(currentPet);
       }
     }, 150);
@@ -1432,6 +1446,56 @@ function startBlinking() {
     }, delay);
   };
   scheduleNext();
+}
+
+// ────────────────────────────────────────────────────────────
+// 캐릭터 대사 타자기 연출 (새 대사일 때만)
+// ────────────────────────────────────────────────────────────
+let lastTypedSpeechKey = '';
+let typewriterTimer = null;
+
+function startSpeechTypewriter() {
+  const el = document.getElementById('speech-body');
+  if (!el) return;
+  const key = el.dataset.speechKey || '';
+  // 같은 대사 재렌더면 스킵 (이미 썼음)
+  if (key === lastTypedSpeechKey) return;
+  // 빈 대사(...) 는 스킵
+  const fullText = el.textContent || '';
+  if (!fullText || fullText.trim() === '…') {
+    lastTypedSpeechKey = key;
+    return;
+  }
+  lastTypedSpeechKey = key;
+
+  // 이전 타이머 중단
+  if (typewriterTimer) clearTimeout(typewriterTimer);
+
+  // 초기화: 빈 상태로 시작
+  el.textContent = '';
+  el.classList.add('speech-typing');
+
+  let i = 0;
+  const CHAR_DELAY = 35;  // ms per char
+  const step = () => {
+    if (!el.isConnected) {
+      el.classList.remove('speech-typing');
+      return;
+    }
+    i++;
+    el.textContent = fullText.slice(0, i);
+    if (i < fullText.length) {
+      // 마침표/쉼표 뒤에는 살짝 쉼
+      const lastChar = fullText[i - 1];
+      const extraDelay = (lastChar === '.' || lastChar === '?' || lastChar === '!') ? 180
+                       : (lastChar === ',') ? 80 : 0;
+      typewriterTimer = setTimeout(step, CHAR_DELAY + extraDelay);
+    } else {
+      el.classList.remove('speech-typing');
+      typewriterTimer = null;
+    }
+  };
+  step();
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1539,6 +1603,71 @@ function playSfx(kind = 'happy') {
   }
 }
 
+/**
+ * 액션별 8bit 사운드
+ */
+function playActionSfx(action) {
+  try {
+    if (!sfxAudioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      sfxAudioCtx = new AC();
+    }
+    if (sfxAudioCtx.state === 'suspended') sfxAudioCtx.resume();
+    const ctx = sfxAudioCtx;
+    const now = ctx.currentTime;
+
+    // 액션별 음계
+    const presets = {
+      feed:  { notes: [659.25, 783.99, 1046.5], dur: 0.08, peak: 0.09, wave: 'square' },   // E-G-C (식사 차임)
+      play:  { notes: [1046.5, 1318.5, 1046.5, 1567.98], dur: 0.06, peak: 0.08, wave: 'square' }, // C-E-C-G (장난감)
+      sleep: { notes: [523.25, 392, 261.63], dur: 0.18, peak: 0.06, wave: 'triangle' },     // C-G-C 하강 (자장가)
+      clean: { notes: [1318.5, 1567.98, 1318.5, 1567.98], dur: 0.05, peak: 0.07, wave: 'square' }, // 트위치 (물뿌림)
+      train: { notes: [440, 554.37, 659.25, 880], dur: 0.07, peak: 0.09, wave: 'square' }, // A-C#-E-A (운동)
+      talk:  { notes: [659.25, 880], dur: 0.07, peak: 0.07, wave: 'square' },              // E-A (인사)
+    };
+    const preset = presets[action] || presets.feed;
+
+    preset.notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = preset.wave;
+      osc.frequency.value = freq;
+
+      const start = now + i * preset.dur;
+      const end = start + preset.dur;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(preset.peak, start + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.001, end);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(end + 0.02);
+    });
+  } catch (err) { /* ignore */ }
+}
+
+/**
+ * 액션별 ASCII 흔들기 애니메이션
+ * CSS 클래스 추가 → 자동 제거
+ */
+function playActionAnimation(action) {
+  const petArt = document.getElementById('pet-art');
+  if (!petArt) return;
+  // 기존 액션 클래스 모두 제거
+  petArt.classList.remove('act-feed', 'act-play', 'act-sleep', 'act-clean', 'act-train');
+  // 팔 벌리기 중이면 건너뜀 (그 애니메이션 방해 방지)
+  if (petArt.classList.contains('pet-hug')) return;
+
+  const className = `act-${action}`;
+  petArt.classList.add(className);
+  // 애니메이션 끝나면 자동 제거 (0.8s)
+  setTimeout(() => {
+    if (petArt) petArt.classList.remove(className);
+  }, 800);
+}
+
 function handlePetTap() {
   if (!currentPet || currentPet.isDead) return;
 
@@ -1587,6 +1716,8 @@ function handlePetTap() {
       (currentPet.personality.activeVsCalm || 0) + 2);  // 공격적
     currentPet.personality.socialVsIntro = Math.max(-100,
       (currentPet.personality.socialVsIntro || 0) - 3);  // 내향
+    currentPet.personality.diligentVsFree = Math.max(-100,
+      (currentPet.personality.diligentVsFree || 0) - 3);  // 자유 (반항)
     currentPet.happy = Math.max(0, currentPet.happy - 3);
     currentPet.bond = Math.max(0, (currentPet.bond || 0) - 1);
     // 화난 이모티콘 + 낮은 버징 소리

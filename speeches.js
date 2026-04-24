@@ -1217,16 +1217,21 @@ const TOPIC_BRIDGE = {
 };
 
 export function getNextTopicChoices(currentTopic, usedTopics) {
+  const allTopics = Object.keys(TOPIC_FLOW);
+  // 모든 주제 다 썼으면 초기화 (무한 대화 가능)
+  if (usedTopics.length >= allTopics.length) {
+    usedTopics.length = 0;  // in-place reset
+  }
+
   const next = TOPIC_FLOW[currentTopic] || [];
-  // 이미 사용한 주제는 제외
   const available = next.filter(t => !usedTopics.includes(t));
 
-  // 후보가 없으면 사용 안 한 전체 주제 중 랜덤 2개
-  if (available.length === 0) {
-    const allTopics = Object.keys(TOPIC_FLOW);
-    return allTopics.filter(t => !usedTopics.includes(t)).slice(0, 2);
-  }
-  return available;
+  // 연결된 주제 외에 추가로 새 주제도 제공 (대화 끊기지 않게)
+  const unused = allTopics.filter(t => !usedTopics.includes(t) && !available.includes(t));
+  const shuffled = unused.sort(() => Math.random() - 0.5).slice(0, 2);
+
+  const combined = [...available, ...shuffled].slice(0, 4);
+  return combined;
 }
 
 export function getTopicBridge(fromTopic, toTopic, vars) {

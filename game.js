@@ -142,6 +142,19 @@ export function applyAction(pet, action, userName = null, override = null) {
     pet.personality[axis] = Math.max(-100, Math.min(100, (pet.personality[axis] || 0) + d));
   }
 
+  // TEEN 사춘기 보정 - 성실(양수) 방향 영향을 약화, 자유(음수) 쪽으로 자연 드리프트
+  // 크루가 뭘 해도 TEEN은 "반항적 자유로움"으로 기우는 세계관
+  if (pet.stage === 'TEEN') {
+    // 행동할 때마다 작은 자유 드리프트 (−0.5)
+    pet.personality.diligentVsFree = Math.max(-100,
+      (pet.personality.diligentVsFree || 0) - 0.5);
+    // 내향 쪽으로도 약하게 (혼자만의 시간)
+    if (Math.random() < 0.3) {
+      pet.personality.socialVsIntro = Math.max(-100,
+        (pet.personality.socialVsIntro || 0) - 0.3);
+    }
+  }
+
   if (pet.exp >= 100) {
     pet.exp -= 100;
     pet.level = (pet.level || 1) + 1;
