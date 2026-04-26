@@ -2826,3 +2826,9 @@ body {
   .bt-guide-modal .bt-guide-body { padding: 12px; max-height: 75vh; }
   .bt-guide-section-text { font-size: 10.5px; }
 }
+
+/* BATTLE/PvP 모달이 떠 있을 때 body 스크롤 잠금 */
+body:has(#minigame-modal),
+body:has(.bt-guide-modal) {
+  overflow: hidden;
+}

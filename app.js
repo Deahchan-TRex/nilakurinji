@@ -7654,9 +7654,9 @@ function renderBattle(modal, state) {
     const defColor = state.currentAttacker === 'crew' ? '#c97d5f' : '#03B352';
     const variantLabel = state.attackVariant === 'quick' ? '🗡 견제' : '⚔ 강타';
 
-    // 데미지 시각화
+    // 데미지 시각화 (damageResolved이면 카드 숨김 - 한 번만 등장)
     let damageHTML = '';
-    if (state.defenseDice !== null && state.defenseAction !== null) {
+    if (state.defenseDice !== null && state.defenseAction !== null && !state.damageResolved) {
       const isDodgeSuccess = state.defenseAction === 'dodge' && state.defenseDice >= 8;
       const isFullDodgeFail = state.defenseAction === 'dodge' && state.defenseDice < 8;
 
@@ -7930,6 +7930,7 @@ async function handleBattlePreroll(modal, state) {
   state.defenseDice = null;
   state.defenseAction = null;
   state.attackCritical = false;
+  state.damageResolved = false;
   state.defenseCritical = false;
   state.crewPreroll = null;
   state.marsPreroll = null;
@@ -7978,6 +7979,7 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
   state.defenseDice = null;
   state.defenseAction = null;
   state.attackCritical = false;
+  state.damageResolved = false;
   state.defenseCritical = false;
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
@@ -8023,7 +8025,7 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
   // 4) 데미지 팝업 + HP 깎기 (동시에)
   spawnDamagePopup(modal, 'mars', state.pendingDamage);
   state.marsHp = Math.max(0, state.marsHp - state.pendingDamage);
-  // pendingDamage 유지 - render에서 HP 흔들림 적용 위해
+  state.damageResolved = true;  // 데미지 카드 더 이상 표시 안 함
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
 
@@ -8049,6 +8051,7 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
   state.defenseDice = null;
   state.defenseAction = null;
   state.attackCritical = false;
+  state.damageResolved = false;
   state.defenseCritical = false;
   state.pendingDamage = 0;
   state.currentAttacker = state.currentAttacker === 'crew' ? 'mars' : 'crew';
@@ -8097,6 +8100,7 @@ async function handleBattleMarsAttack(modal, state) {
   state.defenseDice = null;
   state.defenseAction = null;
   state.attackCritical = false;
+  state.damageResolved = false;
   state.defenseCritical = false;
   state.animating = false;
 
@@ -8149,6 +8153,7 @@ async function handleBattleCrewDefense(modal, state, defAction) {
   // 3) 데미지 팝업 + HP 깎기
   spawnDamagePopup(modal, 'crew', state.pendingDamage);
   state.crewHp = Math.max(0, state.crewHp - state.pendingDamage);
+  state.damageResolved = true;
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
 
@@ -8171,6 +8176,7 @@ async function handleBattleCrewDefense(modal, state, defAction) {
   state.defenseDice = null;
   state.defenseAction = null;
   state.attackCritical = false;
+  state.damageResolved = false;
   state.defenseCritical = false;
   state.pendingDamage = 0;
   state.currentAttacker = state.currentAttacker === 'crew' ? 'mars' : 'crew';
@@ -8543,6 +8549,7 @@ function showPvpBattle(battleId) {
     mySlot: null,         // 'p1' or 'p2'
     lastResolveSeen: 0,   // 데미지 카드 자동 진행 중복 방지
     advanceScheduled: false,
+    damageCardShown: false,  // 데미지 카드 한 번만 표시
   };
 
   // Firestore 구독
@@ -8586,6 +8593,12 @@ function showPvpBattle(battleId) {
       // 종료 아니면 자동 진행 예약 (중복 방지)
       if (b.status !== 'done' && !state.advanceScheduled) {
         state.advanceScheduled = true;
+        // 700ms 후 데미지 카드 숨기기 (HP 깎이는 시점과 맞춤)
+        setTimeout(() => {
+          state.damageCardShown = true;
+          renderPvpBattle(modal, state);
+          attachPvpBattleHandlers(modal, state);
+        }, 700);
         setTimeout(async () => {
           // 공격자 한 명만 advance 호출 (중복 트랜잭션 방지)
           if (state.battle?.phase === 'resolve' && state.battle?.currentAttacker === state.mySlot) {
@@ -8596,6 +8609,11 @@ function showPvpBattle(battleId) {
       } else if (b.status === 'done') {
         playBattleFinishSound(b.winner === state.mySlot);
       }
+    }
+
+    // 새 라운드/공격 시작 시 damageCardShown 리셋
+    if (b.phase === 'attack' && prev?.phase !== 'attack') {
+      state.damageCardShown = false;
     }
   });
 
@@ -8740,9 +8758,9 @@ function renderPvpBattle(modal, state) {
     const defColor = b.currentAttacker === state.mySlot ? '#c97d5f' : '#03B352';
     const variantLabel = b.attackVariant === 'quick' ? '🗡 견제' : '⚔ 강타';
 
-    // 데미지 카드
+    // 데미지 카드 (damageCardShown이면 숨김 - 한 번만 등장)
     let damageHTML = '';
-    if (b.phase === 'resolve' && b.defenseDice !== null) {
+    if (b.phase === 'resolve' && b.defenseDice !== null && !state.damageCardShown) {
       const isDodgeSuccess = b.defenseAction === 'dodge' && b.defenseDice >= 8;
       const isDodgeFail = b.defenseAction === 'dodge' && b.defenseDice < 8;
       if (isDodgeSuccess) {
