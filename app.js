@@ -411,6 +411,7 @@ function renderCommandButtons() {
           <button class="cmd admin" data-act="radio-test">📻 라디오 테스트</button>
           <button class="cmd admin" data-act="radio-broadcast">📡 모든 크루에게 라디오 발사</button>
           <button class="cmd admin" data-act="noise-test">⚡ 노이즈 테스트</button>
+          <button class="cmd admin" data-act="battle-tutorial">📖 BATTLE 튜토리얼 시작</button>
         `,
       },
       {
@@ -489,6 +490,7 @@ function renderCommandButtons() {
       else if (act === 'radio-test') testRadioPopup();
       else if (act === 'radio-broadcast') broadcastRadioToAllCrew();
       else if (act === 'noise-test') triggerNoiseEffect();
+      else if (act === 'battle-tutorial') showBattleGame(true);
       else if (act === 'finale') {
         // 이미 봉인된 경우 편지 보기, 아니면 답장 UI
         if (currentPet?.finaleSealed) showSealedLetter();
@@ -5836,7 +5838,15 @@ function showMinigameHub() {
       else if (game === 'blackjack') showBlackjackGame();
       else if (game === 'tictactoe') showTicTacToeGame();
       else if (game === 'maze') showMazeGame();
-      else if (game === 'battle') showBattleGame();
+      else if (game === 'battle') {
+        // 튜토리얼 미경험 시 안내 분기
+        const tutorialKey = `battleTutorialSeen_${currentUser.name}`;
+        if (!localStorage.getItem(tutorialKey) && !isMinigameTestMode()) {
+          showBattleTutorialPrompt();
+        } else {
+          showBattleGame();
+        }
+      }
       else if (game === 'pvp') showPvpLobby();
     });
   });
@@ -7343,10 +7353,120 @@ function pickMarsAction(marsHp, maxHp) {
 
 
 /**
+ * BATTLE 튜토리얼 프롬프트 (첫 진입 시)
+ */
+function showBattleTutorialPrompt() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 10001;
+    display: flex; align-items: center; justify-content: center;
+  `;
+  overlay.innerHTML = `
+    <div style="background: #050a07; border: 1px solid #5fb37a;
+      box-shadow: 0 0 24px rgba(3,179,82,0.3); padding: 18px;
+      max-width: 360px; width: 92vw; font-family: 'Courier New', monospace;">
+      <div style="color: #03B352; font-size: 13px; margin-bottom: 10px; letter-spacing: 1px;">
+        &gt; 첫 결투 시퀀스 감지
+      </div>
+      <div style="color: #c9c9c9; font-size: 12px; line-height: 1.7; margin-bottom: 14px;">
+        대상 개체와의 첫 결투입니다.<br>
+        <span style="color: #5fb37a;">학습 시퀀스</span>를 활성화하면<br>
+        각 단계마다 관찰 노트가 표시됩니다.
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button id="bt-tutorial-yes" style="
+          flex: 1; padding: 10px; background: #0a3818;
+          border: 1px solid #03B352; color: #03B352;
+          font-family: inherit; font-size: 12px; cursor: pointer;
+          font-weight: bold;">
+          📖 학습 시퀀스
+        </button>
+        <button id="bt-tutorial-no" style="
+          flex: 1; padding: 10px; background: transparent;
+          border: 1px solid #666; color: #888;
+          font-family: inherit; font-size: 12px; cursor: pointer;">
+          정상 진행
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = (tutorial) => {
+    overlay.remove();
+    localStorage.setItem(`battleTutorialSeen_${currentUser.name}`, '1');
+    showBattleGame(tutorial);
+  };
+  overlay.querySelector('#bt-tutorial-yes').addEventListener('click', () => close(true));
+  overlay.querySelector('#bt-tutorial-no').addEventListener('click', () => close(false));
+}
+
+/**
+ * 튜토리얼 단계별 안내 텍스트 (연구자 시점)
+ */
+const BATTLE_TUTORIAL = {
+  intro: {
+    title: '시뮬레이션 결투 · 개요',
+    text: `[관찰 노트] 본 시퀀스는 비물리적 시뮬레이션이며, 대상 개체에 실제 손상이 가해지지 않는다.\n\n양 측 HP 30. 일방의 HP가 0에 도달하면 시퀀스가 종료된다.\n결투는 1D10 다이스 판정 방식을 따른다.`,
+  },
+  preroll: {
+    title: '선공 판정',
+    text: `[프로토콜 1] 양 측이 각각 1D10을 굴려 더 높은 값을 기록한 쪽이 선공권을 획득한다.\n\n동률 시 재굴림한다.\n공격 → 방어/회피 순으로 1턴이 종료되며, 양 측 1회씩 공격이 이루어지면 라운드가 갱신된다.`,
+  },
+  attack_choice: {
+    title: '공격 변형',
+    text: `[프로토콜 2] 공격 옵션은 두 가지로 분기된다.\n\n⚔ 강타 — 1D10 (1~10). 분산 큼, 최댓값 획득 가능.\n🗡 견제 — 1D6+2 (3~8). 분산 작음, 최댓값 제한.\n\n전략적으로 선택할 것.`,
+  },
+  defense_choice: {
+    title: '방어 변형',
+    text: `[프로토콜 3] 공격 다이스가 굴려진 후, 방어자는 두 가지로 응답한다.\n\n🛡 방어 — 방어 다이스 굴려 공격값에서 차감. 잔여분이 데미지.\n💨 회피 — 8 이상이면 데미지 0 (완전 회피). 7 이하면 공격 전체 적중.\n\n방어는 안정적, 회피는 도박적이다.`,
+  },
+  damage: {
+    title: '데미지 산정',
+    text: `[관찰 결과] 데미지 = 공격 다이스 - 방어 다이스 (또는 회피 실패 시 공격 전체).\n\n해당 값만큼 HP가 감소한다.\nHP 0 도달 시 시뮬레이션 종료.\n\n시각적 피드백: HP 바 흔들림 및 -N 수치 표시.`,
+  },
+  end: {
+    title: '시퀀스 종료',
+    text: `[기록 완료] 본 시뮬레이션은 학습용으로, 실 데이터에 반영되지 않는다.\n\n이후 진입하는 결투는 정상 시퀀스로 처리되며, 보상/페널티가 적용된다.\n\n관찰자 측 추가 안내는 없다.`,
+  },
+};
+
+/**
+ * 튜토리얼 박스 오버레이 표시
+ * @param {string} stepKey - BATTLE_TUTORIAL의 키
+ * @param {function} onConfirm - 확인 클릭 시
+ */
+function showBattleTutorialStep(stepKey, onConfirm) {
+  const step = BATTLE_TUTORIAL[stepKey];
+  if (!step) { onConfirm?.(); return; }
+
+  // 기존 박스 제거
+  const existing = document.querySelector('.bt-tutorial-box');
+  if (existing) existing.remove();
+
+  const box = document.createElement('div');
+  box.className = 'bt-tutorial-box';
+  box.innerHTML = `
+    <div class="bt-tutorial-head">
+      <span class="bt-tutorial-icon">📖</span>
+      <span class="bt-tutorial-title">${step.title}</span>
+    </div>
+    <div class="bt-tutorial-text">${step.text.replace(/\n/g, '<br>')}</div>
+    <button class="bt-tutorial-confirm">기록 확인 ▸</button>
+  `;
+  document.body.appendChild(box);
+
+  box.querySelector('.bt-tutorial-confirm').addEventListener('click', () => {
+    box.remove();
+    onConfirm?.();
+  });
+}
+
+/**
  * PvE BATTLE 턴제 진행
  * Phase 흐름: preroll → attack → defense → roundover → (다음 공격자) → ...
  */
-function showBattleGame() {
+function showBattleGame(tutorialMode = false) {
   if (!currentPet || currentPet.isDead) return;
   const existing = document.getElementById('minigame-modal');
   if (existing) { existing.remove(); return; }
@@ -7371,6 +7491,8 @@ function showBattleGame() {
     result: null,       // 'win' | 'lose'
     rewardText: '',
     animating: false,
+    tutorial: tutorialMode,       // 튜토리얼 모드 여부
+    tutorialShown: {},            // 어느 단계 안내 띄웠는지 추적
   };
 
   const modal = document.createElement('div');
@@ -7383,6 +7505,18 @@ function showBattleGame() {
     wrapper.parentNode.insertBefore(modal, wrapper);
   }
   attachBattleHandlers(modal, state);
+
+  // 튜토리얼: 인트로 → preroll 안내
+  if (state.tutorial) {
+    setTimeout(() => {
+      showBattleTutorialStep('intro', () => {
+        state.tutorialShown.intro = true;
+        showBattleTutorialStep('preroll', () => {
+          state.tutorialShown.preroll = true;
+        });
+      });
+    }, 300);
+  }
 }
 
 function renderBattle(modal, state) {
@@ -7641,7 +7775,7 @@ function renderBattle(modal, state) {
 
   modal.innerHTML = `
     <div class="maze-popup-head">
-      <span>&gt; BATTLE.EXE · ROUND ${state.round} ${isTest ? '· <span style="color:#e8a853;">[TEST]</span>' : ''}</span>
+      <span>&gt; BATTLE.EXE · ROUND ${state.round} ${isTest ? '· <span style="color:#e8a853;">[TEST]</span>' : ''}${state.tutorial ? '· <span style="color:#a87dc9;">[TUTORIAL]</span>' : ''}</span>
       <span class="maze-close" id="bt-close" title="닫기">─ _ ✕</span>
     </div>
     <div class="maze-popup-body">
@@ -7760,6 +7894,10 @@ async function handleBattlePreroll(modal, state) {
   if (state.currentAttacker === 'mars') {
     await new Promise(r => setTimeout(r, 600));
     handleBattleMarsAttack(modal, state);
+  } else if (state.tutorial && !state.tutorialShown.attack_choice) {
+    // 크루 공격 차례 + 튜토리얼: attack_choice 안내
+    state.tutorialShown.attack_choice = true;
+    showBattleTutorialStep('attack_choice');
   }
 }
 
@@ -7837,6 +7975,12 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
 
+  // 튜토리얼: 첫 데미지 후 damage 안내
+  if (state.tutorial && !state.tutorialShown.damage && state.pendingDamage > 0) {
+    state.tutorialShown.damage = true;
+    setTimeout(() => showBattleTutorialStep('damage'), 800);
+  }
+
   await new Promise(r4 => setTimeout(r4, 1100));
 
   // 5) pendingDamage 정리
@@ -7850,6 +7994,10 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
     renderBattle(modal, state);
     attachBattleHandlers(modal, state);
     playBattleFinishSound(true);
+    if (state.tutorial && !state.tutorialShown.end) {
+      state.tutorialShown.end = true;
+      setTimeout(() => showBattleTutorialStep('end'), 1500);
+    }
     return;
   }
 
@@ -7902,6 +8050,12 @@ async function handleBattleMarsAttack(modal, state) {
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
   // 크루 입력 대기
+
+  // 튜토리얼: defense_choice 안내
+  if (state.tutorial && !state.tutorialShown.defense_choice) {
+    state.tutorialShown.defense_choice = true;
+    setTimeout(() => showBattleTutorialStep('defense_choice'), 300);
+  }
 }
 
 /**
@@ -7946,6 +8100,12 @@ async function handleBattleCrewDefense(modal, state, defAction) {
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
 
+  // 튜토리얼: 첫 데미지 후 damage 안내
+  if (state.tutorial && !state.tutorialShown.damage && state.pendingDamage > 0) {
+    state.tutorialShown.damage = true;
+    setTimeout(() => showBattleTutorialStep('damage'), 800);
+  }
+
   await new Promise(r => setTimeout(r, 1100));
 
   // 종료 체크
@@ -7957,6 +8117,10 @@ async function handleBattleCrewDefense(modal, state, defAction) {
     renderBattle(modal, state);
     attachBattleHandlers(modal, state);
     playBattleFinishSound(false);
+    if (state.tutorial && !state.tutorialShown.end) {
+      state.tutorialShown.end = true;
+      setTimeout(() => showBattleTutorialStep('end'), 1500);
+    }
     return;
   }
 
@@ -8025,6 +8189,12 @@ function resolveBattleAttack(state, attacker) {
 async function onBattleFinish(state) {
   const cfg = CONFIG.MINIGAME_CONFIG.BATTLE;
   let reward, label;
+
+  // 튜토리얼 모드: 보상 없음, 저장 안 함
+  if (state.tutorial) {
+    state.rewardText = '(학습 시퀀스 · 데이터 비기록)';
+    return;
+  }
 
   if (state.result === 'win') {
     if (state.round <= 3) {
@@ -8330,17 +8500,48 @@ function showPvpBattle(battleId) {
     battleId,
     battle: null,
     submitting: false,
-    mySlot: null,  // 'p1' or 'p2'
+    mySlot: null,         // 'p1' or 'p2'
+    lastResolveSeen: 0,   // 데미지 카드 자동 진행 중복 방지
+    advanceScheduled: false,
   };
 
   // Firestore 구독
   pvpUnsubscribe = Backend.onBattleChange(battleId, (b) => {
+    const prev = state.battle;
     state.battle = b;
-    // 슬롯 결정
     if (b.players.p1?.name === currentUser.name) state.mySlot = 'p1';
     else if (b.players.p2?.name === currentUser.name) state.mySlot = 'p2';
     renderPvpBattle(modal, state);
     attachPvpBattleHandlers(modal, state);
+
+    // 데미지 발생 시 (resolve 페이즈 진입) 팝업 + HP 흔들림
+    if (b.phase === 'resolve' && prev?.phase !== 'resolve' && b.pendingDamage !== undefined) {
+      const defenderSlot = b.currentAttacker === 'p1' ? 'p2' : 'p1';
+      const target = defenderSlot === state.mySlot ? 'crew' : 'mars';
+      // PvP는 mars→opponent로 매핑됨 (renderPvpBattle 순서: 첫 row=상대, 둘째=나)
+      // 데미지 받는 사람이 나면 'crew' (둘째 row), 상대면 'mars' (첫째 row)
+      setTimeout(() => spawnDamagePopup(modal, target, b.pendingDamage), 100);
+      playSfx(b.pendingDamage > 0 ? (target === 'crew' ? 'angry' : 'happy') : 'cute');
+
+      // 종료 아니면 자동 진행 예약 (중복 방지)
+      if (b.status !== 'done' && !state.advanceScheduled) {
+        state.advanceScheduled = true;
+        setTimeout(async () => {
+          // 공격자 한 명만 advance 호출 (중복 트랜잭션 방지)
+          if (state.battle?.phase === 'resolve' && state.battle?.currentAttacker === state.mySlot) {
+            try { await Backend.advancePvpRound(battleId); } catch (e) {}
+          }
+          state.advanceScheduled = false;
+        }, 2000);
+      } else if (b.status === 'done') {
+        playBattleFinishSound(b.winner === state.mySlot);
+      }
+    }
+
+    // 페이즈 진입 시 사운드
+    if (b.phase === 'attack' && prev?.phase !== 'attack' && b.attackDice === null) {
+      // 다이스 굴려야 할 차례 - 사운드는 클라가 굴릴 때 재생
+    }
   });
 
   const wrapper = document.getElementById('speech-wrapper');
@@ -8358,30 +8559,89 @@ function renderPvpBattle(modal, state) {
   const me = b.players[state.mySlot];
   const opSlot = state.mySlot === 'p1' ? 'p2' : 'p1';
   const op = b.players[opSlot];
-
+  const isAttacker = b.currentAttacker === state.mySlot;
   const done = b.status === 'done';
-  let resultHTML = '';
+
+  // 헤더
+  let headerHTML = '';
   if (done) {
-    let label, color;
-    if (b.winner === 'draw') { label = '◇ 무승부'; color = '#8fb39a'; }
-    else if (b.winner === state.mySlot) { label = '◆ 승리!'; color = '#03B352'; }
-    else { label = '✕ 패배'; color = '#c97d5f'; }
-    resultHTML = `
-      <div class="maze-terminal-line good" style="color:${color};font-weight:bold;">&gt; ${label} (${b.round}R)</div>
-      <div class="maze-terminal-line dim">&gt; PvP는 스탯 변화 없음 · 명예의 결투</div>
+    const winnerName = b.winner === 'draw' ? '무승부' :
+      b.winner === state.mySlot ? me.name : op.name;
+    const winnerColor = b.winner === 'draw' ? '#8fb39a' :
+      b.winner === state.mySlot ? '#03B352' : '#c97d5f';
+    const winnerHp = b.winner === 'p1' ? b.players.p1.hp : (b.winner === 'p2' ? b.players.p2.hp : 0);
+    const loserHp = b.winner === 'p1' ? b.players.p2.hp : (b.winner === 'p2' ? b.players.p1.hp : 0);
+    const loserName = b.winner === 'p1' ? b.players.p2.name : (b.winner === 'p2' ? b.players.p1.name : op.name);
+    headerHTML = `
+      <div class="battle-result-card ${b.winner === state.mySlot ? 'win' : 'lose'}">
+        <div class="battle-result-title" style="color:${winnerColor};">
+          ${b.winner === 'draw' ? '◇' : b.winner === state.mySlot ? '◆' : '✕'} ${winnerName}${b.winner === 'draw' ? '' : ' 승리!'}
+        </div>
+        <div class="battle-result-stats">
+          <div class="battle-result-row">
+            <span class="battle-result-name" style="color:${winnerColor};">${winnerName}</span>
+            <span class="battle-result-hp">HP ${winnerHp}/${b.maxHp}</span>
+          </div>
+          <div class="battle-result-row">
+            <span class="battle-result-name" style="color:#666;">${loserName}</span>
+            <span class="battle-result-hp" style="color:#666;">HP ${loserHp}/${b.maxHp}</span>
+          </div>
+          <div class="battle-result-divider"></div>
+          <div class="battle-result-meta">${b.round}라운드 만에 결판</div>
+        </div>
+        <div class="battle-result-reward">PvP는 스탯 변화 없음 · 명예의 결투</div>
+      </div>
     `;
-  } else {
-    resultHTML = `
-      <div class="maze-terminal-line">&gt; ROUND ${b.round} · ${me?.ready ? '상대 대기 중...' : '너의 차례'}</div>
-      <div class="maze-terminal-line dim">&gt; ${op?.name || '?'} ${op?.ready ? '✓ 선택 완료' : '... 고민 중'}</div>
+  } else if (b.phase === 'preroll') {
+    // 첫 라운드 preroll - 세계관 인트로
+    const isFirstRound = b.round === 1;
+    headerHTML = `
+      ${isFirstRound ? `
+        <div class="pvp-intro-card">
+          <div class="pvp-intro-icon">⚯</div>
+          <div class="pvp-intro-text">
+            커넥트와 같은 흐름으로 일시적으로 정신이 연결되는 것을 느낀다.<br>
+            당신들은 혈전이 가능한 링 위에 서있다.
+          </div>
+          <div class="pvp-intro-meta">— SIMULATION RING · ${me?.name} ⚔ ${op?.name}</div>
+        </div>
+      ` : ''}
+      <div class="maze-terminal-line">&gt; ROUND ${b.round} · 선턴 다이스</div>
+      <div class="maze-terminal-line dim">&gt; 양쪽 1D10 굴려 높은 쪽 선공!</div>
+    `;
+  } else if (b.phase === 'attack') {
+    const attName = b.players[b.currentAttacker]?.name || '?';
+    headerHTML = `
+      <div class="maze-terminal-line">&gt; ROUND ${b.round} · ${attName}의 공격!</div>
+      <div class="maze-terminal-line dim">&gt; ${isAttacker ? '너의 차례. 강타? 견제?' : `${attName}이 공격을 준비 중...`}</div>
+    `;
+  } else if (b.phase === 'defense') {
+    const attName = b.players[b.currentAttacker]?.name || '?';
+    const isMyDef = !isAttacker;
+    headerHTML = `
+      <div class="maze-terminal-line">&gt; ROUND ${b.round} · ${attName} 공격 ${b.attackDice}!</div>
+      <div class="maze-terminal-line dim">&gt; ${isMyDef ? '너의 차례. 방어할까 회피할까?' : `${op.name}이 받아낼 준비 중...`}</div>
+    `;
+  } else if (b.phase === 'resolve') {
+    headerHTML = `<div class="maze-terminal-line dim">&gt; 데미지 적용 중...</div>`;
+  }
+
+  // 응원/대사
+  let cheerHTML = '';
+  if (b.cheer) {
+    cheerHTML = `
+      <div class="battle-cheer">
+        <span class="battle-cheer-icon">♪</span>
+        <span class="battle-cheer-text">"${b.cheer}"</span>
+      </div>
     `;
   }
 
-  // 최근 로그 4줄
+  // 로그 (3-4줄)
   const logHTML = (b.log || []).slice(-4).map(line =>
     `<div class="maze-terminal-line dim">&gt; ${line.text}</div>`).join('');
 
-  // HP 바
+  // HP 바 (상대 위, 본인 아래)
   const meBars = me ? Math.ceil((me.hp / b.maxHp) * 12) : 0;
   const opBars = op ? Math.ceil((op.hp / b.maxHp) * 12) : 0;
   const meBarsHTML = Array.from({length: 12}, (_, i) =>
@@ -8389,57 +8649,213 @@ function renderPvpBattle(modal, state) {
   const opBarsHTML = Array.from({length: 12}, (_, i) =>
     `<span class="bt-hp-bar ${i < opBars ? 'on mars' : ''}"></span>`).join('');
 
+  // 다이스 영역
+  let diceHTML = '';
+  // preroll 단계
+  if (b.phase === 'preroll') {
+    const meDice = me?.prerollDice;
+    const opDice = op?.prerollDice;
+    if (meDice !== null || opDice !== null) {
+      const meWin = meDice !== null && opDice !== null && meDice > opDice;
+      const opWin = meDice !== null && opDice !== null && opDice > meDice;
+      diceHTML = `
+        <div class="bt-dice-row">
+          <div class="bt-dice-side ${meWin ? 'winner' : ''}">
+            <div class="bt-dice-label">${me?.name}</div>
+            <div class="bt-dice-face">${meDice !== null ? diceFace(meDice) : '·'}</div>
+            <div class="bt-dice-num">${meDice ?? '-'}</div>
+            <div class="bt-dice-action">선턴</div>
+          </div>
+          <div class="bt-dice-vs">VS</div>
+          <div class="bt-dice-side ${opWin ? 'winner' : ''}">
+            <div class="bt-dice-label" style="color:#c97d5f;">${op?.name}</div>
+            <div class="bt-dice-face">${opDice !== null ? diceFace(opDice) : '·'}</div>
+            <div class="bt-dice-num">${opDice ?? '-'}</div>
+            <div class="bt-dice-action">선턴</div>
+          </div>
+        </div>
+      `;
+    }
+  }
+  // attack/defense/resolve - 공격 다이스 표시
+  else if ((b.phase === 'attack' || b.phase === 'defense' || b.phase === 'resolve') && b.attackDice !== null) {
+    const attName = b.players[b.currentAttacker].name;
+    const defName = b.players[b.currentAttacker === 'p1' ? 'p2' : 'p1'].name;
+    const attColor = b.currentAttacker === state.mySlot ? '#03B352' : '#c97d5f';
+    const defColor = b.currentAttacker === state.mySlot ? '#c97d5f' : '#03B352';
+    const variantLabel = b.attackVariant === 'quick' ? '🗡 견제' : '⚔ 강타';
+
+    // 데미지 카드
+    let damageHTML = '';
+    if (b.phase === 'resolve' && b.defenseDice !== null) {
+      const isDodgeSuccess = b.defenseAction === 'dodge' && b.defenseDice >= 8;
+      const isDodgeFail = b.defenseAction === 'dodge' && b.defenseDice < 8;
+      if (isDodgeSuccess) {
+        damageHTML = `
+          <div class="bt-damage-card no-damage">
+            <div class="bt-damage-headline">💨 완전 회피!</div>
+            <div class="bt-damage-detail">회피 다이스 <strong>${b.defenseDice}</strong> (8+) → 데미지 <strong>0</strong></div>
+          </div>
+        `;
+      } else if (isDodgeFail) {
+        damageHTML = `
+          <div class="bt-damage-card big-damage">
+            <div class="bt-damage-headline">⚠ 회피 실패!</div>
+            <div class="bt-damage-detail">회피 ${b.defenseDice} (8 미만) → <strong class="bt-damage-num">${b.attackDice}</strong> 피해</div>
+          </div>
+        `;
+      } else if (b.defenseAction === 'defend') {
+        const dmg = Math.max(0, b.attackDice - b.defenseDice);
+        if (dmg === 0) {
+          damageHTML = `
+            <div class="bt-damage-card no-damage">
+              <div class="bt-damage-headline">🛡 완전 차단!</div>
+              <div class="bt-damage-detail">공격 ${b.attackDice} − 방어 ${b.defenseDice} = <strong>0</strong> 피해</div>
+            </div>
+          `;
+        } else {
+          damageHTML = `
+            <div class="bt-damage-card damage">
+              <div class="bt-damage-headline">⚔ ${dmg} 피해 적중</div>
+              <div class="bt-damage-detail">공격 ${b.attackDice} − 방어 ${b.defenseDice} = <strong class="bt-damage-num">${dmg}</strong></div>
+            </div>
+          `;
+        }
+      }
+    }
+
+    diceHTML = `
+      <div class="bt-dice-row attack">
+        <div class="bt-dice-side attacker">
+          <div class="bt-dice-label" style="color:${attColor};">⚔ ${attName}</div>
+          <div class="bt-dice-face attack">${diceFace(b.attackDice)}</div>
+          <div class="bt-dice-num huge">${b.attackDice}</div>
+          <div class="bt-dice-action">${variantLabel}</div>
+        </div>
+        <div class="bt-dice-vs">→</div>
+        <div class="bt-dice-side defender">
+          <div class="bt-dice-label" style="color:${defColor};">${defName}</div>
+          <div class="bt-dice-face">${b.defenseDice !== null ? diceFace(b.defenseDice) : '?'}</div>
+          <div class="bt-dice-num huge">${b.defenseDice ?? '-'}</div>
+          <div class="bt-dice-action">${b.defenseAction === 'defend' ? '🛡 방어' : b.defenseAction === 'dodge' ? '💨 회피' : '...'}</div>
+        </div>
+      </div>
+      ${damageHTML}
+    `;
+  }
+
+  // 액션 버튼
+  let actionHTML = '';
+  if (done) {
+    actionHTML = `
+      <div class="maze-actions">
+        <button id="pvp-bt-back" class="maze-btn-action">로비로</button>
+      </div>
+    `;
+  } else if (b.phase === 'preroll') {
+    if (me?.prerollReady) {
+      actionHTML = `
+        <div style="text-align:center;padding:14px;color:#5fb37a;font-size:11px;">
+          ✓ 굴림 완료 · 상대 대기...
+        </div>
+      `;
+    } else {
+      actionHTML = `
+        <div style="text-align:center;margin-top:14px;">
+          <button class="bt-roll-btn" id="pvp-roll-preroll" ${state.submitting ? 'disabled' : ''}>
+            <span class="bt-roll-dice">🎲</span>
+            <span class="bt-roll-label">선턴 다이스 굴리기</span>
+          </button>
+        </div>
+      `;
+    }
+  } else if (b.phase === 'attack') {
+    if (isAttacker) {
+      actionHTML = `
+        <div class="bt-actions" style="grid-template-columns:1fr 1fr;">
+          <button class="bt-action-btn attack" data-attack="heavy" ${state.submitting ? 'disabled' : ''}>
+            <div class="bt-action-icon">⚔</div>
+            <div class="bt-action-label">강타</div>
+            <div class="bt-action-desc">정면 공격 (1D10)</div>
+          </button>
+          <button class="bt-action-btn attack-light" data-attack="quick" ${state.submitting ? 'disabled' : ''}>
+            <div class="bt-action-icon">🗡</div>
+            <div class="bt-action-label">견제</div>
+            <div class="bt-action-desc">빠른 일격 (3-8)</div>
+          </button>
+        </div>
+      `;
+    } else {
+      actionHTML = `
+        <div style="text-align:center;padding:14px;color:#c97d5f;font-size:11px;">
+          ${b.players[b.currentAttacker]?.name}이 공격을 준비 중...
+        </div>
+      `;
+    }
+  } else if (b.phase === 'defense') {
+    if (!isAttacker) {
+      actionHTML = `
+        <div class="bt-actions" style="grid-template-columns:1fr 1fr;">
+          <button class="bt-action-btn defend" data-defaction="defend" ${state.submitting ? 'disabled' : ''}>
+            <div class="bt-action-icon">🛡</div>
+            <div class="bt-action-label">방어</div>
+            <div class="bt-action-desc">데미지 차감</div>
+          </button>
+          <button class="bt-action-btn dodge" data-defaction="dodge" ${state.submitting ? 'disabled' : ''}>
+            <div class="bt-action-icon">💨</div>
+            <div class="bt-action-label">회피</div>
+            <div class="bt-action-desc">8+ 완전회피</div>
+          </button>
+        </div>
+      `;
+    } else {
+      actionHTML = `
+        <div style="text-align:center;padding:14px;color:#c97d5f;font-size:11px;">
+          ${op?.name}이 받아낼 준비 중...
+        </div>
+      `;
+    }
+  } else if (b.phase === 'resolve') {
+    actionHTML = `<div style="text-align:center;padding:10px;color:#5fb37a;font-size:11px;">데미지 적용 중...</div>`;
+  }
+
+  // 데미지 받은 행 흔들림 클래스
+  const opShake = b.phase === 'resolve' && b.pendingDamage > 0 && b.currentAttacker === state.mySlot ? ' bt-hp-hit' : '';
+  const meShake = b.phase === 'resolve' && b.pendingDamage > 0 && b.currentAttacker !== state.mySlot ? ' bt-hp-hit' : '';
+
   modal.innerHTML = `
     <div class="maze-popup-head">
       <span>&gt; PVP.EXE · ROUND ${b.round}</span>
       <span class="maze-close" id="pvp-bt-close">─ _ ✕</span>
     </div>
     <div class="maze-popup-body">
-      ${resultHTML}
+      ${headerHTML}
+      ${cheerHTML}
       ${logHTML}
 
-      <div class="bt-hp-row">
+      <div class="bt-hp-row${opShake}">
         <span class="bt-hp-label" style="color:#c97d5f;">${op?.name || '?'}</span>
         <div class="bt-hp-bars">${opBarsHTML}</div>
         <span class="bt-hp-value">${op?.hp ?? '-'}/${b.maxHp}</span>
       </div>
-      <div class="bt-hp-row">
+      <div class="bt-hp-row${meShake}">
         <span class="bt-hp-label" style="color:#03B352;">${me?.name || '?'}</span>
         <div class="bt-hp-bars">${meBarsHTML}</div>
         <span class="bt-hp-value">${me?.hp ?? '-'}/${b.maxHp}</span>
       </div>
 
-      ${!done ? `
-        ${me?.ready ? `
-          <div style="text-align:center;padding:16px;color:#5fb37a;font-size:12px;">
-            ✓ 선택 완료 · ${op?.ready ? '결과 처리 중...' : '상대 대기...'}
-          </div>
-        ` : `
-          <div class="bt-actions">
-            <button class="bt-action-btn attack" data-action="attack" ${state.submitting ? 'disabled' : ''}>
-              <div class="bt-action-icon">⚔</div>
-              <div class="bt-action-label">공격</div>
-              <div class="bt-action-desc">다이스값 = 데미지</div>
-            </button>
-            <button class="bt-action-btn defend" data-action="defend" ${state.submitting ? 'disabled' : ''}>
-              <div class="bt-action-icon">🛡</div>
-              <div class="bt-action-label">방어</div>
-              <div class="bt-action-desc">데미지 차감</div>
-            </button>
-            <button class="bt-action-btn dodge" data-action="dodge" ${state.submitting ? 'disabled' : ''}>
-              <div class="bt-action-icon">💨</div>
-              <div class="bt-action-label">회피</div>
-              <div class="bt-action-desc">8+ 완전회피</div>
-            </button>
-          </div>
-        `}
-      ` : `
-        <div class="maze-actions">
-          <button id="pvp-bt-back" class="maze-btn-action">로비로</button>
-        </div>
-      `}
+      ${diceHTML}
+      ${actionHTML}
     </div>
   `;
+
+  // 데미지 카드 자동 스크롤
+  if (b.phase === 'resolve') {
+    setTimeout(() => {
+      const card = modal.querySelector('.bt-damage-card');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
+  }
 }
 
 function attachPvpBattleHandlers(modal, state) {
@@ -8455,22 +8871,56 @@ function attachPvpBattleHandlers(modal, state) {
     showPvpLobby();
   });
 
-  modal.querySelectorAll('.bt-action-btn').forEach(btn => {
+  // 1) 선턴 굴리기
+  document.getElementById('pvp-roll-preroll')?.addEventListener('click', async () => {
+    if (state.submitting) return;
+    state.submitting = true;
+    const dice = rollD10();
+    playSfx('blip');
+    try {
+      await Backend.submitPvpPreroll(state.battleId, state.mySlot, dice);
+    } catch (err) {
+      console.error('[pvp] preroll 실패:', err);
+      showToast('⚠ 선턴 등록 실패', 'warn');
+    } finally {
+      state.submitting = false;
+    }
+  });
+
+  // 2) 공격 선택
+  modal.querySelectorAll('[data-attack]').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (state.submitting) return;
-      if (state.battle?.status !== 'active') return;
-      const me = state.battle.players[state.mySlot];
-      if (me?.ready) return;
-
+      const variant = btn.dataset.attack;
+      let dice;
+      if (variant === 'quick') dice = Math.floor(Math.random() * 6) + 1 + 2;  // 3~8
+      else dice = rollD10();
       state.submitting = true;
-      const action = btn.dataset.action;
-      const dice = rollD10();
       playSfx('blip');
       try {
-        await Backend.submitBattleAction(state.battleId, state.mySlot, action, dice);
+        await Backend.submitPvpAttack(state.battleId, state.mySlot, dice, variant);
       } catch (err) {
-        console.error('[pvp] 행동 등록 실패:', err);
-        showToast('⚠ 등록 실패', 'warn');
+        console.error('[pvp] attack 실패:', err);
+        showToast('⚠ 공격 등록 실패', 'warn');
+      } finally {
+        state.submitting = false;
+      }
+    });
+  });
+
+  // 3) 방어/회피 선택
+  modal.querySelectorAll('[data-defaction]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (state.submitting) return;
+      const action = btn.dataset.defaction;
+      const dice = rollD10();
+      state.submitting = true;
+      playSfx('blip');
+      try {
+        await Backend.submitPvpDefense(state.battleId, state.mySlot, dice, action);
+      } catch (err) {
+        console.error('[pvp] defense 실패:', err);
+        showToast('⚠ 방어 등록 실패', 'warn');
       } finally {
         state.submitting = false;
       }

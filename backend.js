@@ -472,11 +472,19 @@ export const Backend = {
       status: 'waiting',
       maxHp,
       players: {
-        p1: { name: hostName, hp: maxHp, action: null, dice: null, ready: false },
+        p1: { name: hostName, hp: maxHp, prerollDice: null, prerollReady: false },
         p2: null,
       },
       round: 1,
-      phase: 'choosing',
+      phase: 'preroll',  // 'preroll' | 'attack' | 'defense' | 'resolve' | 'done'
+      firstAttacker: null,
+      currentAttacker: null,
+      attackDice: null,
+      attackVariant: null,
+      defenseDice: null,
+      defenseAction: null,
+      pendingDamage: 0,
+      cheer: null,
       log: [],
       winner: null,
       createdAt: Date.now(),
@@ -531,7 +539,7 @@ export const Backend = {
       const b = all[battleId];
       if (!b || b.status !== 'waiting') throw new Error('이미 시작되었거나 사라진 도전장');
       if (b.players.p1.name === guestName) throw new Error('자기 도전장에 입장 불가');
-      b.players.p2 = { name: guestName, hp: maxHp, action: null, dice: null, ready: false };
+      b.players.p2 = { name: guestName, hp: maxHp, prerollDice: null, prerollReady: false };
       b.status = 'active';
       b.updatedAt = Date.now();
       all[battleId] = b;
@@ -546,7 +554,7 @@ export const Backend = {
         const b = snap.data();
         if (b.status !== 'waiting') throw new Error('이미 시작됨');
         if (b.players.p1.name === guestName) throw new Error('자기 도전장에 입장 불가');
-        b.players.p2 = { name: guestName, hp: maxHp, action: null, dice: null, ready: false };
+        b.players.p2 = { name: guestName, hp: maxHp, prerollDice: null, prerollReady: false };
         b.status = 'active';
         b.updatedAt = Date.now();
         tx.set(docRef, b);
@@ -561,26 +569,163 @@ export const Backend = {
   },
 
   /**
-   * 행동 등록 (트랜잭션, 양쪽 ready 시 resolve)
+   * 1) 선턴 다이스 등록 - 양쪽 ready되면 firstAttacker 결정
    */
-  async submitBattleAction(battleId, slot, action, dice) {
+  async submitPvpPreroll(battleId, slot, dice) {
+    const updater = (b) => {
+      if (b.status !== 'active' || b.phase !== 'preroll') return b;
+      const player = b.players[slot];
+      if (!player || player.prerollReady) return b;
+      player.prerollDice = dice;
+      player.prerollReady = true;
+      b.updatedAt = Date.now();
+      // 양쪽 다 굴렸으면 결과 결정
+      if (b.players.p1?.prerollReady && b.players.p2?.prerollReady) {
+        const d1 = b.players.p1.prerollDice;
+        const d2 = b.players.p2.prerollDice;
+        if (d1 === d2) {
+          // 동률 - 둘 다 리셋해서 재굴림
+          b.players.p1.prerollDice = null;
+          b.players.p1.prerollReady = false;
+          b.players.p2.prerollDice = null;
+          b.players.p2.prerollReady = false;
+          b.log = (b.log || []).concat([{ text: `선턴 동률 (${d1} vs ${d2}) - 재굴림!` }]);
+        } else {
+          b.firstAttacker = d1 > d2 ? 'p1' : 'p2';
+          b.currentAttacker = b.firstAttacker;
+          b.phase = 'attack';
+          const winName = b.players[b.firstAttacker].name;
+          b.log = (b.log || []).concat([{
+            text: `R${b.round} 선턴: ${b.players.p1.name} ${d1} vs ${b.players.p2.name} ${d2} → ${winName} 선공!`
+          }]);
+        }
+      }
+      return b;
+    };
+    return this._mutateBattle(battleId, updater);
+  },
+
+  /**
+   * 2) 공격 다이스 등록 - 공격자만 호출
+   */
+  async submitPvpAttack(battleId, slot, dice, variant) {
+    const updater = (b) => {
+      if (b.status !== 'active' || b.phase !== 'attack') return b;
+      if (b.currentAttacker !== slot) return b;
+      b.attackDice = dice;
+      b.attackVariant = variant;
+      b.phase = 'defense';
+      b.updatedAt = Date.now();
+      return b;
+    };
+    return this._mutateBattle(battleId, updater);
+  },
+
+  /**
+   * 3) 방어 등록 - 방어자만 호출. resolve 즉시 실행
+   */
+  async submitPvpDefense(battleId, slot, dice, action) {
+    const updater = (b) => {
+      if (b.status !== 'active' || b.phase !== 'defense') return b;
+      // 방어자 = currentAttacker가 아닌 쪽
+      const defenderSlot = b.currentAttacker === 'p1' ? 'p2' : 'p1';
+      if (defenderSlot !== slot) return b;
+      b.defenseDice = dice;
+      b.defenseAction = action;
+      b.phase = 'resolve';
+
+      // 데미지 계산 + 적용
+      const cfg = CONFIG.MINIGAME_CONFIG?.BATTLE || { DODGE_THRESHOLD: 8 };
+      const threshold = cfg.DODGE_THRESHOLD || 8;
+      let damage = 0;
+      if (action === 'defend') {
+        damage = Math.max(0, b.attackDice - dice);
+      } else if (action === 'dodge') {
+        damage = dice >= threshold ? 0 : b.attackDice;
+      }
+      b.pendingDamage = damage;
+      const defender = b.players[defenderSlot];
+      defender.hp = Math.max(0, defender.hp - damage);
+
+      // 로그
+      const attName = b.players[b.currentAttacker].name;
+      const defName = defender.name;
+      let logText;
+      if (action === 'defend') {
+        if (damage === 0) logText = `R${b.round}: ${attName} 공격 ${b.attackDice} → ${defName} 방어 ${dice} 완전 차단!`;
+        else logText = `R${b.round}: ${attName} 공격 ${b.attackDice} − 방어 ${dice} = ${damage} 피해`;
+      } else {
+        if (damage === 0) logText = `R${b.round}: ${attName} 공격 ${b.attackDice} → ${defName} 회피 ${dice} (${threshold}+) 완전회피!`;
+        else logText = `R${b.round}: ${attName} 공격 ${b.attackDice} → ${defName} 회피 실패 ${dice}, ${damage} 피해!`;
+      }
+      b.log = (b.log || []).concat([{ text: logText }]);
+      if (b.log.length > 12) b.log = b.log.slice(-12);
+
+      // 종료 체크
+      if (defender.hp <= 0) {
+        b.status = 'done';
+        b.phase = 'done';
+        b.winner = b.currentAttacker;
+      }
+
+      b.updatedAt = Date.now();
+      return b;
+    };
+    return this._mutateBattle(battleId, updater);
+  },
+
+  /**
+   * 4) 라운드 다음 단계로 진행 (resolve → attack 교체 또는 라운드+1)
+   * 데미지 카드 표시 후 양쪽이 ready 되어야 진행하도록 클라가 호출
+   */
+  async advancePvpRound(battleId) {
+    const updater = (b) => {
+      if (b.status !== 'active' || b.phase !== 'resolve') return b;
+
+      // 공격자 교체
+      const newAttacker = b.currentAttacker === 'p1' ? 'p2' : 'p1';
+      // 라운드 종료 체크 (최초 공격자로 돌아왔으면 라운드 +1)
+      if (newAttacker === b.firstAttacker) {
+        b.round += 1;
+      }
+      b.currentAttacker = newAttacker;
+      b.phase = 'attack';
+      b.attackDice = null;
+      b.attackVariant = null;
+      b.defenseDice = null;
+      b.defenseAction = null;
+      b.pendingDamage = 0;
+      b.cheer = null;
+      b.updatedAt = Date.now();
+      return b;
+    };
+    return this._mutateBattle(battleId, updater);
+  },
+
+  /**
+   * 응원/대사 설정 (공격자/방어자 누구든 보낼 수 있음)
+   */
+  async setPvpCheer(battleId, text) {
+    const updater = (b) => {
+      b.cheer = text;
+      b.updatedAt = Date.now();
+      return b;
+    };
+    return this._mutateBattle(battleId, updater);
+  },
+
+  /**
+   * battle 상태를 안전하게 변형하는 헬퍼 (트랜잭션)
+   */
+  async _mutateBattle(battleId, updater) {
     if (CONFIG.LOCAL_TEST_MODE) {
       const all = JSON.parse(localStorage.getItem('nk_battles') || '{}');
       const b = all[battleId];
       if (!b) throw new Error('battle not found');
-      const player = b.players[slot];
-      if (!player || player.ready) return b;
-      player.action = action;
-      player.dice = dice;
-      player.ready = true;
-      b.updatedAt = Date.now();
-      // 양쪽 ready면 resolve
-      if (b.players.p1?.ready && b.players.p2?.ready) {
-        this._resolveBattleRound(b);
-      }
-      all[battleId] = b;
+      const updated = updater(b);
+      all[battleId] = updated;
       localStorage.setItem('nk_battles', JSON.stringify(all));
-      return b;
+      return updated;
     }
     try {
       const docRef = db._fns.doc(db, 'battles', battleId);
@@ -588,119 +733,15 @@ export const Backend = {
         const snap = await tx.get(docRef);
         if (!snap.exists()) throw new Error('battle not found');
         const b = snap.data();
-        if (b.status !== 'active') return b;
-        if (b.phase !== 'choosing') return b;
-        const player = b.players[slot];
-        if (!player || player.ready) return b;
-        player.action = action;
-        player.dice = dice;
-        player.ready = true;
-        b.updatedAt = Date.now();
-        // 양쪽 ready면 resolve
-        if (b.players.p1?.ready && b.players.p2?.ready) {
-          this._resolveBattleRound(b);
-        }
-        tx.set(docRef, b);
-        return b;
+        const updated = updater(b);
+        tx.set(docRef, updated);
+        return updated;
       });
       return result;
     } catch (err) {
-      console.error('[battle] 행동 등록 실패:', err);
+      console.error('[battle] mutate 실패:', err);
       throw err;
     }
-  },
-
-  /**
-   * 라운드 해소 (private)
-   * 양쪽 행동/다이스를 보고 HP 갱신, 다음 라운드 또는 종료 판정
-   */
-  _resolveBattleRound(b) {
-    const cfg = CONFIG.MINIGAME_CONFIG?.BATTLE || { DODGE_THRESHOLD: 8 };
-    const p1 = b.players.p1;
-    const p2 = b.players.p2;
-
-    // p1이 받는 데미지 계산 (p2의 행동 → p1 영향)
-    const damageToP1 = this._calcDamage(p2.action, p1.action, p2.dice, p1.dice, cfg);
-    // p2가 받는 데미지 계산
-    const damageToP2 = this._calcDamage(p1.action, p2.action, p1.dice, p2.dice, cfg);
-
-    // 로그 작성
-    const events = this._buildBattleLog(p1, p2, damageToP1, damageToP2, cfg, b.round);
-    b.log = (b.log || []).concat(events);
-    if (b.log.length > 12) b.log = b.log.slice(-12);
-
-    // HP 적용
-    p1.hp = Math.max(0, p1.hp - damageToP1);
-    p2.hp = Math.max(0, p2.hp - damageToP2);
-
-    // 행동 리셋
-    p1.action = null; p1.dice = null; p1.ready = false;
-    p2.action = null; p2.dice = null; p2.ready = false;
-
-    // 종료 판정
-    if (p1.hp <= 0 && p2.hp <= 0) {
-      b.status = 'done';
-      b.phase = 'done';
-      // 동시 사망 = 무승부 처리, p1 승리로 (먼저 도전한 사람)
-      b.winner = 'draw';
-    } else if (p1.hp <= 0) {
-      b.status = 'done'; b.phase = 'done'; b.winner = 'p2';
-    } else if (p2.hp <= 0) {
-      b.status = 'done'; b.phase = 'done'; b.winner = 'p1';
-    } else {
-      b.round += 1;
-    }
-  },
-
-  _calcDamage(attackerAct, defenderAct, attackerDice, defenderDice, cfg) {
-    if (attackerAct !== 'attack') return 0;
-    if (defenderAct === 'defend') {
-      return Math.max(0, attackerDice - defenderDice);
-    }
-    if (defenderAct === 'dodge') {
-      const threshold = cfg.DODGE_THRESHOLD || 8;
-      return defenderDice >= threshold ? 0 : attackerDice;
-    }
-    // defender도 attack
-    return attackerDice;
-  },
-
-  _buildBattleLog(p1, p2, dmgToP1, dmgToP2, cfg, round) {
-    const events = [];
-    const threshold = cfg.DODGE_THRESHOLD || 8;
-    const actLabel = (a) => a === 'attack' ? '공격' : a === 'defend' ? '방어' : '회피';
-
-    // p1 입장
-    if (p1.action === 'attack') {
-      if (p2.action === 'defend') {
-        events.push({ text: `R${round}: ${p1.name} 공격 ${p1.dice} → ${p2.name} 방어 ${p2.dice} → ${dmgToP2} 피해` });
-      } else if (p2.action === 'dodge') {
-        if (p2.dice >= threshold) {
-          events.push({ text: `R${round}: ${p1.name} 공격 ${p1.dice} → ${p2.name} 회피 ${p2.dice} 완전회피!` });
-        } else {
-          events.push({ text: `R${round}: ${p1.name} 공격 ${p1.dice} → ${p2.name} 회피 실패 ${p2.dice}, ${dmgToP2} 피해!` });
-        }
-      } else {
-        events.push({ text: `R${round}: ${p1.name} 공격 ${p1.dice} → ${p2.name} ${dmgToP2} 피해` });
-      }
-    }
-    if (p2.action === 'attack') {
-      if (p1.action === 'defend') {
-        events.push({ text: `R${round}: ${p2.name} 공격 ${p2.dice} → ${p1.name} 방어 ${p1.dice} → ${dmgToP1} 피해` });
-      } else if (p1.action === 'dodge') {
-        if (p1.dice >= threshold) {
-          events.push({ text: `R${round}: ${p2.name} 공격 ${p2.dice} → ${p1.name} 회피 ${p1.dice} 완전회피!` });
-        } else {
-          events.push({ text: `R${round}: ${p2.name} 공격 ${p2.dice} → ${p1.name} 회피 실패 ${p1.dice}, ${dmgToP1} 피해!` });
-        }
-      } else {
-        events.push({ text: `R${round}: ${p2.name} 공격 ${p2.dice} → ${p1.name} ${dmgToP1} 피해` });
-      }
-    }
-    if (p1.action !== 'attack' && p2.action !== 'attack') {
-      events.push({ text: `R${round}: ${p1.name} ${actLabel(p1.action)} · ${p2.name} ${actLabel(p2.action)} - 정적.` });
-    }
-    return events;
   },
 
   /**
