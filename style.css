@@ -2830,12 +2830,9 @@ body {
   .bt-guide-section-text { font-size: 10.5px; }
 }
 
-/* BATTLE/PvP 모달이 떠 있을 때 body/html 모두 스크롤 잠금 */
-html.modal-open,
+/* BATTLE/PvP 모달이 떠 있을 때만 body 스크롤 잠금 (모달 닫히면 자동 해제) */
 body.modal-open {
-  overflow: hidden !important;
-  height: 100% !important;
-  position: relative;
+  overflow: hidden;
 }
 
 /* 모달 자체 높이 - 작은 화면에서 슬라이드바 안 생기게 */
@@ -2878,3 +2875,28 @@ body.modal-open {
   30%  { box-shadow: 0 0 32px rgba(201,125,95,0.7), inset 0 0 20px rgba(201,125,95,0.3); }
   100% { box-shadow: 0 0 6px rgba(201,125,95,0.2); }
 }
+
+/* 이모지 반응 - body에 fixed로 띄움 (render 영향 없음) */
+.emoji-reaction-float {
+  background: #050a07;
+  border: 1px solid currentColor;
+  padding: 4px 10px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  white-space: nowrap;
+  letter-spacing: 1px;
+  font-weight: bold;
+  animation: emojiFloatPop 2.2s ease-out forwards;
+  transform-origin: bottom center;
+}
+@keyframes emojiFloatPop {
+  0%   { transform: translateX(-50%) translateY(8px) scale(0.5); opacity: 0; }
+  15%  { transform: translateX(-50%) translateY(-4px) scale(1.2); opacity: 1; }
+  30%  { transform: translateX(-50%) translateY(-12px) scale(1.0); }
+  80%  { transform: translateX(-50%) translateY(-20px); opacity: 1; }
+  100% { transform: translateX(-50%) translateY(-32px); opacity: 0; }
+}
+.emoji-reaction-float.emoji-joy   { color: #f0c074; border-color: #e8a853; box-shadow: 0 0 12px rgba(232,168,83,0.4); }
+.emoji-reaction-float.emoji-sad   { color: #7d9cb3; border-color: #5a8099; box-shadow: 0 0 12px rgba(125,156,179,0.4); }
+.emoji-reaction-float.emoji-shock { color: #c9a8e0; border-color: #a87dc9; box-shadow: 0 0 12px rgba(168,125,201,0.4); }
+.emoji-reaction-float.emoji-angry { color: #e8956f; border-color: #c97d5f; box-shadow: 0 0 12px rgba(201,125,95,0.4); }

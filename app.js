@@ -7193,20 +7193,27 @@ const EMOJI_REACTIONS = [
 ];
 
 /**
- * 이름 옆에 이모지 반응 띄우기 (인라인)
- * @param {Element} container - 이름 라벨이 있는 부모
+ * 이름 옆에 이모지 반응 띄우기 (body fixed - render 영향 없음)
+ * @param {Element} container - 기준 라벨 (위치 anchor)
  * @param {string} emojiId - EMOJI_REACTIONS의 id
  */
 function showEmojiReaction(container, emojiId) {
   const def = EMOJI_REACTIONS.find(r => r.id === emojiId);
   if (!def || !container) return;
-  // 기존 반응 제거
-  const old = container.querySelector('.emoji-reaction');
-  if (old) old.remove();
-  const el = document.createElement('span');
-  el.className = `emoji-reaction emoji-${emojiId}`;
+
+  // container의 화면 좌표 계산
+  const rect = container.getBoundingClientRect();
+
+  const el = document.createElement('div');
+  el.className = `emoji-reaction-float emoji-${emojiId}`;
   el.textContent = def.face;
-  container.appendChild(el);
+  el.style.position = 'fixed';
+  el.style.left = (rect.left + rect.width / 2) + 'px';
+  el.style.top = (rect.top - 8) + 'px';
+  el.style.transform = 'translateX(-50%)';
+  el.style.zIndex = '13000';
+  el.style.pointerEvents = 'none';
+  document.body.appendChild(el);
   setTimeout(() => el.remove(), 2200);
 }
 
@@ -8573,13 +8580,15 @@ function showPvpBattle(battleId) {
       }
     }
 
-    // 상대방 이모지 반응 감지 (lastEmoji 변경 시)
+    // 이모지 반응 감지 (본인+상대 모두) - render 후에도 다시 표시되어야 함
     if (b.lastEmoji && (!prev?.lastEmoji || b.lastEmoji.at !== prev.lastEmoji.at)) {
-      // 본인이 보낸 건 이미 표시됐으므로 상대방 것만 처리
-      if (b.lastEmoji.slot !== state.mySlot) {
-        const opHost = modal.querySelector('.emoji-host[data-side="op"]');
-        if (opHost) showEmojiReaction(opHost, b.lastEmoji.id);
-      }
+      const isMine = b.lastEmoji.slot === state.mySlot;
+      const sideKey = isMine ? 'me' : 'op';
+      // render는 위에서 이미 호출됐으니 약간 지연 후 노드 찾기
+      setTimeout(() => {
+        const host = modal.querySelector(`.emoji-host[data-side="${sideKey}"]`);
+        if (host) showEmojiReaction(host, b.lastEmoji.id);
+      }, 50);
     }
 
     // 데미지 발생 시 (resolve 페이즈 진입) 팝업 + HP 흔들림 모두 동시
@@ -9010,15 +9019,17 @@ function attachPvpBattleHandlers(modal, state) {
     });
   });
 
-  // 이모지 반응 버튼 (PvP) - 본인 라벨에 즉시 표시 + Firestore 동기화
+  // 이모지 반응 버튼 (PvP) - Firestore 동기화 → onSnapshot에서 양쪽 화면 동시 표시
   modal.querySelectorAll('.emoji-react-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const emojiId = btn.dataset.emoji;
-      const myHost = modal.querySelector('.emoji-host[data-side="me"]');
-      if (myHost) showEmojiReaction(myHost, emojiId);
       try {
         await Backend.setPvpEmoji(state.battleId, state.mySlot, emojiId);
-      } catch (e) { /* 동기화 실패는 무시 */ }
+      } catch (e) {
+        // 실패 시 fallback: 로컬에만 표시
+        const myHost = modal.querySelector('.emoji-host[data-side="me"]');
+        if (myHost) showEmojiReaction(myHost, emojiId);
+      }
     });
   });
 }
@@ -9255,15 +9266,15 @@ async function startGame() {
   renderMain();
   await Backend.init();
 
-  // 미니게임/가이드 모달 감지 → body 스크롤 잠금
+  // 미니게임 모달이 떠 있을 때만 body 스크롤 잠금
   const observeModal = () => {
-    const hasModal = !!document.getElementById('minigame-modal') ||
-                     !!document.querySelector('.bt-guide-modal');
+    const hasModal = !!document.getElementById('minigame-modal');
     document.body.classList.toggle('modal-open', hasModal);
-    document.documentElement.classList.toggle('modal-open', hasModal);
   };
   const modalObserver = new MutationObserver(observeModal);
-  modalObserver.observe(document.body, { childList: true, subtree: false });
+  modalObserver.observe(document.body, { childList: true, subtree: true });
+  // 안전 보강: 5초마다 강제 동기화 (혹시 옵저버가 놓친 경우)
+  setInterval(observeModal, 5000);
 
   // 세션 시작 시각 기록 (이 이후의 강제 새로고침만 반응)
   const mySessionStartAt = Date.now();
