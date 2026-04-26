@@ -1525,3 +1525,28 @@ body {
     color: #c9f0d8;
   }
 }
+
+/* ──────────────────────────────────────
+   미로 게임 (MAZE)
+   ────────────────────────────────────── */
+.mz-grid {
+  user-select: none;
+  white-space: pre;
+  display: inline-block;
+}
+.mz-fog        { color: #1a2a30; }
+.mz-wall       { color: #5a6a70; }
+.mz-path       { color: #2d4a5a; }
+.mz-path-dim   { color: #1a2530; }
+.mz-player     { color: #03B352; font-weight: bold; text-shadow: 0 0 6px #03B352; }
+.mz-exit       { color: #e8a853; font-weight: bold; text-shadow: 0 0 4px #e8a853; }
+.mz-treasure   { color: #ffd700; text-shadow: 0 0 4px #ffd700; }
+.mz-trap       { color: #c97d5f; }
+
+.mz-btn:hover {
+  background: #1a2533 !important;
+  color: #c9d4e0 !important;
+}
+.mz-btn:active {
+  transform: scale(0.95);
+}

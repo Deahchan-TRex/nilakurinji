@@ -320,7 +320,7 @@ function renderCommandButtons() {
       adminCmds.innerHTML = `
         <button class="cmd${signalCls}" data-act="signal" style="grid-column: span 2;">SIGNAL</button>
         <button class="cmd" data-act="minigame" style="grid-column: span 2;">GAME</button>
-        <button class="cmd" data-act="pending" style="grid-column: span 2;">말함</button>
+        <button class="cmd" data-act="pending" style="grid-column: span 2;">COMMUNICATE</button>
         <button class="cmd" data-act="lore">LORE</button>
         <button class="cmd" data-act="logout">LOGOUT</button>
       `;
@@ -329,7 +329,7 @@ function renderCommandButtons() {
       adminCmds.innerHTML = `
         <button class="cmd${signalCls}" data-act="signal" style="grid-column: span 2;">SIGNAL</button>
         <button class="cmd" data-act="minigame" style="grid-column: span 2;">GAME</button>
-        <button class="cmd" data-act="pending">말함</button>
+        <button class="cmd" data-act="pending">COMMUNICATE</button>
         <button class="cmd" data-act="logout">LOGOUT</button>
       `;
     }
@@ -407,7 +407,7 @@ function renderCommandButtons() {
           <button class="cmd admin" data-act="signal-admin">📡 신호 제어</button>
           <button class="cmd admin" data-act="finale">⭐ FINALE</button>
           <button class="cmd admin" data-act="minigame">🎯 GAME</button>
-          <button class="cmd admin" data-act="pending">💭 말함</button>
+          <button class="cmd admin" data-act="pending">💭 COMMUNICATE</button>
           <button class="cmd admin" data-act="radio-test">📻 라디오 테스트</button>
           <button class="cmd admin" data-act="radio-broadcast">📡 모든 크루에게 라디오 발사</button>
           <button class="cmd admin" data-act="noise-test">⚡ 노이즈 테스트</button>
@@ -3275,9 +3275,12 @@ async function processSignalSystem() {
 /**
  * 신호 목록 모달 — 활성/만료/완료된 모든 신호 보기
  */
-function showSignalList() {
+function showSignalList(opts = {}) {
   const existing = document.getElementById('signal-list-modal');
   if (existing) { existing.remove(); return; }
+
+  const PER_PAGE = 4;
+  const page = opts.page ?? 0;
 
   const signals = listActiveSignals(currentPet)
     .filter(s => !s.skipped);  // 시스템 활성화 전 스킵된 건 안 보임
@@ -3286,6 +3289,10 @@ function showSignalList() {
     showToast('📡 아직 수신된 신호가 없습니다', 'system');
     return;
   }
+
+  const totalPages = Math.max(1, Math.ceil(signals.length / PER_PAGE));
+  const safePage = Math.min(page, totalPages - 1);
+  const slice = signals.slice(safePage * PER_PAGE, (safePage + 1) * PER_PAGE);
 
   const modal = document.createElement('div');
   modal.id = 'signal-list-modal';
@@ -3300,8 +3307,25 @@ function showSignalList() {
         수신된 신호 ${signals.length}개 · 24시간 내 해독하지 않으면 영구 소멸합니다.
       </div>
       <div id="signal-list-items">
-        ${signals.map(s => renderSignalListItem(s)).join('')}
+        ${slice.map(s => renderSignalListItem(s)).join('')}
       </div>
+
+      ${totalPages > 1 ? `
+        <div style="display:flex;justify-content:center;align-items:center;gap:10px;
+          margin-top:14px;padding-top:10px;border-top:1px dotted #2d5a3e;font-size:11px;">
+          <button class="signal-list-page" data-page="${safePage - 1}"
+            ${safePage === 0 ? 'disabled' : ''}
+            style="background:transparent;border:1px solid ${safePage === 0 ? '#2d5a3e' : '#5fb37a'};
+            color:${safePage === 0 ? '#333' : '#5fb37a'};padding:5px 14px;font-family:inherit;font-size:11px;
+            cursor:${safePage === 0 ? 'not-allowed' : 'pointer'};">◀ 이전</button>
+          <span style="color:#8fb39a;">${safePage + 1} / ${totalPages}</span>
+          <button class="signal-list-page" data-page="${safePage + 1}"
+            ${safePage >= totalPages - 1 ? 'disabled' : ''}
+            style="background:transparent;border:1px solid ${safePage >= totalPages - 1 ? '#2d5a3e' : '#5fb37a'};
+            color:${safePage >= totalPages - 1 ? '#333' : '#5fb37a'};padding:5px 14px;font-family:inherit;font-size:11px;
+            cursor:${safePage >= totalPages - 1 ? 'not-allowed' : 'pointer'};">다음 ▶</button>
+        </div>
+      ` : ''}
     </div>
   `;
 
@@ -3311,11 +3335,23 @@ function showSignalList() {
   }
 
   document.getElementById('signal-list-close').addEventListener('click', () => modal.remove());
+
+  // 신호 클릭 → 상세
   modal.querySelectorAll('[data-signal-id]').forEach(el => {
     el.addEventListener('click', () => {
       const id = el.dataset.signalId;
       modal.remove();
       showSignalDetail(id);
+    });
+  });
+
+  // 페이지 이동
+  modal.querySelectorAll('.signal-list-page').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      const newPage = parseInt(btn.dataset.page);
+      modal.remove();
+      setTimeout(() => showSignalList({ page: newPage }), 50);
     });
   });
 }
@@ -5703,6 +5739,20 @@ function showMinigameHub() {
             3x3 격자에 먼저 줄을 긋는다
           </div>
         </button>
+
+        <button class="mg-option ${!unlocked ? 'mg-locked' : ''}" data-game="maze"
+          ${!unlocked ? 'disabled' : ''}
+          style="padding:14px;background:${unlocked?'#0a1018':'#050505'};
+          border:1px solid ${unlocked?'#7d9cb3':'#333'};color:${unlocked?'#7d9cb3':'#555'};
+          font-family:inherit;font-size:13px;cursor:${unlocked?'pointer':'not-allowed'};text-align:left;">
+          <div style="font-weight:bold;">
+            MAZE · 미로 탐험 🌫
+            ${!unlocked ? ' <span style="float:right;font-size:10px;">🔒 CHILD부터</span>' : ''}
+          </div>
+          <div style="font-size:11px;color:${unlocked?'#9ab3c9':'#444'};margin-top:4px;">
+            안개 속 미로에서 출구를 찾는다 · 보물과 함정
+          </div>
+        </button>
       </div>
 
       <div style="margin-top:14px;font-size:10px;color:#666;text-align:center;">
@@ -5736,6 +5786,7 @@ function showMinigameHub() {
       if (game === 'updown') showUpDownGame();
       else if (game === 'blackjack') showBlackjackGame();
       else if (game === 'tictactoe') showTicTacToeGame();
+      else if (game === 'maze') showMazeGame();
     });
   });
 }
@@ -6522,6 +6573,492 @@ async function onTicTacToeFinish(state) {
     type: 'system',
   });
 }
+
+
+// ════════════════════════════════════════════════════════════
+// MAZE - 미로 탐험 (포그 오브 워 + 랜덤 생성)
+// ════════════════════════════════════════════════════════════
+
+/**
+ * 단계별 미로 크기/난이도
+ */
+function getMazeConfig() {
+  const stage = currentPet?.stage || 'CHILD';
+  const map = {
+    CHILD: { size: 8,  turns: 40, treasures: 2, traps: 2 },
+    TEEN:  { size: 10, turns: 55, treasures: 3, traps: 3 },
+    ADULT: { size: 12, turns: 75, treasures: 4, traps: 4 },
+  };
+  return map[stage] || map.CHILD;
+}
+
+/**
+ * 랜덤 미로 생성 (DFS backtracking, odd-cell wall structure)
+ * @param {number} N - 그리드 크기 (홀수 권장; 짝수 들어와도 동작)
+ * @returns {string[][]} 2D 배열 ('█'=벽, '·'=길)
+ */
+function generateMaze(N) {
+  // N을 홀수로 보정
+  if (N % 2 === 0) N += 1;
+
+  // 전부 벽으로 초기화
+  const grid = Array.from({ length: N }, () => Array(N).fill('█'));
+
+  // DFS 시작: (1,1)에서 출발
+  const stack = [[1, 1]];
+  grid[1][1] = '·';
+  const dirs = [[0, 2], [0, -2], [2, 0], [-2, 0]];
+
+  while (stack.length > 0) {
+    const [x, y] = stack[stack.length - 1];
+    // 가능한 방향 (인접 2칸이 벽인 곳)
+    const options = dirs
+      .map(([dx, dy]) => [x + dx, y + dy, dx, dy])
+      .filter(([nx, ny]) =>
+        nx > 0 && nx < N - 1 && ny > 0 && ny < N - 1 && grid[ny][nx] === '█'
+      );
+    if (options.length === 0) {
+      stack.pop();
+      continue;
+    }
+    // 랜덤 방향 선택
+    const [nx, ny, dx, dy] = options[Math.floor(Math.random() * options.length)];
+    // 사이 벽도 뚫기
+    grid[y + dy / 2][x + dx / 2] = '·';
+    grid[ny][nx] = '·';
+    stack.push([nx, ny]);
+  }
+
+  return grid;
+}
+
+/**
+ * BFS로 두 점 간 최단거리 (보물/함정/출구 배치 시 도달 가능 보장)
+ */
+function bfsDistance(grid, sx, sy, ex, ey) {
+  const N = grid.length;
+  const visited = Array.from({ length: N }, () => Array(N).fill(false));
+  const queue = [[sx, sy, 0]];
+  visited[sy][sx] = true;
+  while (queue.length) {
+    const [x, y, d] = queue.shift();
+    if (x === ex && y === ey) return d;
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx >= 0 && nx < N && ny >= 0 && ny < N && !visited[ny][nx] && grid[ny][nx] !== '█') {
+        visited[ny][nx] = true;
+        queue.push([nx, ny, d + 1]);
+      }
+    }
+  }
+  return -1;
+}
+
+/**
+ * 미로에 보물/함정/출구 배치
+ */
+function populateMaze(grid, treasures, traps) {
+  const N = grid.length;
+  // 빈 칸들 수집 (시작점 제외)
+  const empties = [];
+  for (let y = 1; y < N - 1; y++) {
+    for (let x = 1; x < N - 1; x++) {
+      if (grid[y][x] === '·' && !(x === 1 && y === 1)) {
+        empties.push([x, y]);
+      }
+    }
+  }
+  // 셔플
+  empties.sort(() => Math.random() - 0.5);
+
+  // 출구: 시작점에서 가장 먼 쪽 (오른쪽 아래 코너 근처 우선)
+  let exit = null;
+  let maxDist = -1;
+  for (const [x, y] of empties) {
+    const d = bfsDistance(grid, 1, 1, x, y);
+    // 오른쪽 아래로 갈수록 가산점
+    const score = d + (x + y) * 0.3;
+    if (score > maxDist) {
+      maxDist = score;
+      exit = [x, y];
+    }
+  }
+  if (!exit) exit = empties[0];
+
+  const exitIdx = empties.findIndex(([x, y]) => x === exit[0] && y === exit[1]);
+  if (exitIdx >= 0) empties.splice(exitIdx, 1);
+
+  const treasureCells = empties.splice(0, treasures);
+  const trapCells = empties.splice(0, traps);
+
+  return { exit, treasures: treasureCells, traps: trapCells };
+}
+
+function showMazeGame() {
+  if (!currentPet || currentPet.isDead) return;
+  const existing = document.getElementById('minigame-modal');
+  if (existing) { existing.remove(); return; }
+
+  const cfg = getMazeConfig();
+  const grid = generateMaze(cfg.size);
+  const N = grid.length;  // 홀수 보정 후 실제 크기
+  const placement = populateMaze(grid, cfg.treasures, cfg.traps);
+
+  const state = {
+    grid, N,
+    px: 1, py: 1,
+    exit: placement.exit,
+    treasures: placement.treasures,  // [[x,y], ...]
+    traps: placement.traps,
+    visited: new Set(['1,1']),       // 방문한 칸 (포그 오브 워)
+    collectedTreasures: 0,
+    triggeredTraps: 0,
+    turnsLeft: cfg.turns,
+    maxTurns: cfg.turns,
+    cleared: false,
+    failed: false,
+    rewardText: '',
+    lastEvent: null,  // 'treasure' | 'trap' | null
+  };
+
+  const modal = document.createElement('div');
+  modal.id = 'minigame-modal';
+  modal.className = 'talk-modal';
+  renderMazeGame(modal, state);
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+  attachMazeHandlers(modal, state);
+}
+
+/**
+ * 시야 안에 있는 칸인지 (체비셰프 거리 ≤ 2)
+ */
+function isInSight(state, x, y) {
+  const dx = Math.abs(x - state.px);
+  const dy = Math.abs(y - state.py);
+  return Math.max(dx, dy) <= 2;
+}
+
+function isVisited(state, x, y) {
+  return state.visited.has(`${x},${y}`);
+}
+
+function renderMazeGame(modal, state) {
+  const isTest = isMinigameTestMode();
+  const N = state.N;
+
+  // 미로 그리기
+  const lines = [];
+  for (let y = 0; y < N; y++) {
+    let row = '';
+    for (let x = 0; x < N; x++) {
+      const inSight = isInSight(state, x, y);
+      const visited = isVisited(state, x, y);
+
+      // 게임 종료 시 전체 보기
+      const showAll = state.cleared || state.failed;
+
+      if (!visited && !inSight && !showAll) {
+        row += '<span class="mz-fog">▒</span>';
+        continue;
+      }
+
+      const cell = state.grid[y][x];
+      // 동적 마커 (시야 안에 있을 때만 보물/함정 보임, visited는 평면)
+      const isExit = state.exit[0] === x && state.exit[1] === y;
+      const isTreasure = state.treasures.some(([tx, ty]) => tx === x && ty === y);
+      const isTrap = state.traps.some(([tx, ty]) => tx === x && ty === y);
+      const isPlayer = state.px === x && state.py === y;
+
+      let ch, cls;
+      if (isPlayer) { ch = '@'; cls = 'mz-player'; }
+      else if (isExit) { ch = 'E'; cls = 'mz-exit'; }
+      else if (isTreasure && (inSight || showAll)) { ch = '★'; cls = 'mz-treasure'; }
+      else if (isTrap && (inSight || showAll)) { ch = '▲'; cls = 'mz-trap'; }
+      else if (cell === '█') { ch = '█'; cls = 'mz-wall'; }
+      else { ch = '·'; cls = inSight ? 'mz-path' : 'mz-path-dim'; }
+
+      row += `<span class="${cls}">${ch}</span>`;
+    }
+    lines.push(row);
+  }
+
+  // 결과 영역
+  let resultHTML = '';
+  if (state.cleared) {
+    const turnsUsed = state.maxTurns - state.turnsLeft;
+    const speed = state.turnsLeft / state.maxTurns;
+    let label, color;
+    if (speed > 0.5) { label = '◆ 완벽 클리어!'; color = '#03B352'; }
+    else if (speed > 0) { label = '◆ 클리어'; color = '#5fb37a'; }
+    else { label = '◇ 아슬한 탈출'; color = '#e8a853'; }
+    resultHTML = `
+      <div style="padding:12px;background:#0a3818;border:1px solid #03B352;margin-bottom:10px;text-align:center;">
+        <div style="color:${color};font-size:14px;font-weight:bold;margin-bottom:6px;">${label}</div>
+        <div style="color:#c9c9c9;font-size:11px;margin-bottom:6px;">
+          ${turnsUsed}턴 사용 · ★ ${state.collectedTreasures}/${state.treasures.length + state.collectedTreasures} · ▲ ${state.triggeredTraps}회 밟음
+        </div>
+        <div style="color:#8fb39a;font-size:11px;">${state.rewardText}</div>
+      </div>
+    `;
+  } else if (state.failed) {
+    resultHTML = `
+      <div style="padding:12px;background:#3d1818;border:1px solid #c97d5f;margin-bottom:10px;text-align:center;">
+        <div style="color:#c97d5f;font-size:14px;font-weight:bold;margin-bottom:6px;">✕ 길을 잃었다</div>
+        <div style="color:#c9c9c9;font-size:11px;margin-bottom:6px;">
+          턴 소진 · ★ ${state.collectedTreasures} 회수
+        </div>
+        <div style="color:#8fb39a;font-size:11px;">${state.rewardText}</div>
+      </div>
+    `;
+  }
+
+  // 이벤트 메시지
+  let eventHTML = '';
+  if (state.lastEvent === 'treasure') {
+    eventHTML = `<div style="color:#03B352;font-size:11px;text-align:center;margin-bottom:8px;">✦ 보물 발견! ★ +1</div>`;
+  } else if (state.lastEvent === 'trap') {
+    eventHTML = `<div style="color:#c97d5f;font-size:11px;text-align:center;margin-bottom:8px;">⚠ 함정! 턴 -2</div>`;
+  }
+
+  const done = state.cleared || state.failed;
+
+  modal.innerHTML = `
+    <div class="talk-modal-head" style="background:#1a2533;">
+      <span>MAZE · 미로 탐험 (${N}x${N}) ${isTest ? '· <span style="color:#e8a853;">[TEST]</span>' : ''}</span>
+      <span class="talk-close" id="mz-close">✕ 닫기</span>
+    </div>
+    <div class="talk-modal-body" style="display:block;padding:14px;">
+      ${resultHTML}
+      ${eventHTML}
+
+      <pre class="mz-grid" style="background:#050a0e;border:1px solid #2d4a5a;padding:8px;
+        font-family:'Courier New',monospace;font-size:14px;line-height:1.0;letter-spacing:1px;
+        color:#c9c9c9;margin:0 0 12px;text-align:center;overflow-x:auto;
+">${lines.join('\n')}</pre>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;
+        font-size:11px;color:#8fb39a;margin-bottom:14px;padding:0 4px;">
+        <span>남은 턴: <strong style="color:${state.turnsLeft <= 5 ? '#c97d5f' : '#03B352'};">${state.turnsLeft}</strong>/${state.maxTurns}</span>
+        <span>★ ${state.collectedTreasures}</span>
+        <span>▲ ${state.triggeredTraps}</span>
+      </div>
+
+      ${!done ? `
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;max-width:200px;margin:0 auto;">
+          <span></span>
+          <button class="mz-btn" data-dir="up" style="padding:10px;background:#0a1018;
+            border:1px solid #5a7d8f;color:#7d9cb3;font-family:inherit;cursor:pointer;font-size:14px;">↑</button>
+          <span></span>
+          <button class="mz-btn" data-dir="left" style="padding:10px;background:#0a1018;
+            border:1px solid #5a7d8f;color:#7d9cb3;font-family:inherit;cursor:pointer;font-size:14px;">←</button>
+          <button class="mz-btn" data-dir="down" style="padding:10px;background:#0a1018;
+            border:1px solid #5a7d8f;color:#7d9cb3;font-family:inherit;cursor:pointer;font-size:14px;">↓</button>
+          <button class="mz-btn" data-dir="right" style="padding:10px;background:#0a1018;
+            border:1px solid #5a7d8f;color:#7d9cb3;font-family:inherit;cursor:pointer;font-size:14px;">→</button>
+        </div>
+        <div style="text-align:center;margin-top:10px;font-size:10px;color:#666;">
+          @ MARS II · ★ 보물 · ▲ 함정 · E 출구 · ▒ 안개
+        </div>
+      ` : `
+        <div style="display:flex;gap:8px;margin-top:6px;">
+          <button id="mz-again" style="flex:1;padding:10px;background:transparent;
+            border:1px solid #5fb37a;color:#5fb37a;font-family:inherit;font-size:12px;
+            cursor:pointer;">다시 도전</button>
+          <button id="mz-back" style="flex:1;padding:10px;background:transparent;
+            border:1px solid #666;color:#888;font-family:inherit;font-size:12px;
+            cursor:pointer;">메뉴로</button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function attachMazeHandlers(modal, state) {
+  document.getElementById('mz-close')?.addEventListener('click', () => modal.remove());
+
+  modal.querySelectorAll('.mz-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (state.cleared || state.failed) return;
+      const dir = btn.dataset.dir;
+      const dx = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
+      const dy = dir === 'up' ? -1 : dir === 'down' ? 1 : 0;
+      handleMazeMove(modal, state, dx, dy);
+    });
+  });
+
+  document.getElementById('mz-again')?.addEventListener('click', () => {
+    modal.remove();
+    setTimeout(showMazeGame, 100);
+  });
+  document.getElementById('mz-back')?.addEventListener('click', () => {
+    modal.remove();
+    showMinigameHub();
+  });
+}
+
+async function handleMazeMove(modal, state, dx, dy) {
+  const nx = state.px + dx;
+  const ny = state.py + dy;
+  // 범위 체크
+  if (nx < 0 || nx >= state.N || ny < 0 || ny >= state.N) return;
+  // 벽 체크
+  if (state.grid[ny][nx] === '█') return;
+
+  // 이동
+  state.px = nx;
+  state.py = ny;
+  state.turnsLeft -= 1;
+  state.lastEvent = null;
+
+  // 시야 내 칸들을 visited에 추가
+  for (let yy = ny - 2; yy <= ny + 2; yy++) {
+    for (let xx = nx - 2; xx <= nx + 2; xx++) {
+      if (xx >= 0 && xx < state.N && yy >= 0 && yy < state.N) {
+        state.visited.add(`${xx},${yy}`);
+      }
+    }
+  }
+
+  // 출구 도달
+  if (state.exit[0] === nx && state.exit[1] === ny) {
+    state.cleared = true;
+    await onMazeFinish(state);
+    renderMazeGame(modal, state);
+    attachMazeHandlers(modal, state);
+    return;
+  }
+
+  // 보물 수집
+  const tIdx = state.treasures.findIndex(([tx, ty]) => tx === nx && ty === ny);
+  if (tIdx >= 0) {
+    state.treasures.splice(tIdx, 1);
+    state.collectedTreasures += 1;
+    state.lastEvent = 'treasure';
+    playSfx('happy');
+  }
+
+  // 함정 발동
+  const trapIdx = state.traps.findIndex(([tx, ty]) => tx === nx && ty === ny);
+  if (trapIdx >= 0) {
+    state.traps.splice(trapIdx, 1);
+    state.triggeredTraps += 1;
+    state.turnsLeft = Math.max(0, state.turnsLeft - 2);
+    state.lastEvent = 'trap';
+    playSfx('angry');
+  }
+
+  // 턴 소진 체크
+  if (state.turnsLeft <= 0) {
+    state.failed = true;
+    await onMazeFinish(state);
+  }
+
+  renderMazeGame(modal, state);
+  attachMazeHandlers(modal, state);
+}
+
+async function onMazeFinish(state) {
+  let reward = {};
+  let label = '';
+
+  if (state.cleared) {
+    const speed = state.turnsLeft / state.maxTurns;
+    if (speed > 0.5) {
+      // 빠른 클리어
+      reward = {
+        intel: +10, happy: +5, bond: +2,
+        personality: { diligentVsFree: +2, socialVsIntro: +1 },
+      };
+      label = '완벽';
+    } else if (speed > 0) {
+      reward = {
+        intel: +6, happy: +3,
+        personality: { diligentVsFree: +1 },
+      };
+      label = '클리어';
+    } else {
+      reward = {
+        intel: +4, happy: +1,
+        personality: { activeVsCalm: -2 },
+      };
+      label = '아슬';
+    }
+    // 보물 보너스
+    reward.intel += state.collectedTreasures * 3;
+    reward.happy = (reward.happy || 0) + state.collectedTreasures * 2;
+    // 함정 페널티 (강도/지능 일부 감소)
+    if (state.triggeredTraps > 0) {
+      reward.strength = -state.triggeredTraps * 5;
+    }
+  } else if (state.failed) {
+    // 실패: happy 감소, 차분/자유 강화. 보물 일부 회수
+    reward = {
+      happy: -5,
+      intel: state.collectedTreasures * 2,  // 보물 정보 회수
+      personality: { activeVsCalm: -3, diligentVsFree: -2 },
+    };
+    label = '실패';
+  }
+
+  // 보상 텍스트
+  const parts = [];
+  for (const [key, val] of Object.entries(reward)) {
+    if (key === 'personality' || val === 0) continue;
+    parts.push(`${key.toUpperCase()} ${val > 0 ? '+' : ''}${val}`);
+  }
+  if (reward.personality) {
+    for (const [axis, d] of Object.entries(reward.personality)) {
+      const lab = { activeVsCalm:d<0?'차분':'활발', socialVsIntro:d<0?'내향':'사교',
+        greedVsTemperance:d<0?'절제':'탐욕', diligentVsFree:d<0?'자유':'성실' }[axis];
+      if (lab) parts.push(`${lab} ${d > 0 ? '+' : ''}${d}`);
+    }
+  }
+  state.rewardText = parts.join(' · ');
+
+  // 테스트 모드: 저장 안 함
+  if (isMinigameTestMode()) {
+    state.rewardText = '(테스트 모드 · 저장 안 됨) ' + state.rewardText;
+    return;
+  }
+
+  // 보상 적용
+  for (const [key, val] of Object.entries(reward)) {
+    if (key === 'personality') continue;
+    if (currentPet[key] !== undefined) {
+      currentPet[key] = Math.max(0, Math.min(100, (currentPet[key] || 0) + val));
+    }
+  }
+  if (reward.personality) {
+    currentPet.personality = currentPet.personality || {};
+    for (const [axis, d] of Object.entries(reward.personality)) {
+      currentPet.personality[axis] = Math.max(-100, Math.min(100,
+        (currentPet.personality[axis] || 0) + d));
+    }
+  }
+
+  await incrementMinigameCount();
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'MINIGAME',
+    text: `미로 ${label} → ${state.rewardText}`,
+    type: state.cleared ? 'epic' : 'warn',
+  });
+
+  // 캐릭터 대사
+  const speech = state.cleared
+    ? (state.collectedTreasures > 0
+        ? `여길 빠져나오니… 어디로 가는 걸까. 이건 가져갈게.`
+        : `안개 너머에 길이 있었어.`)
+    : `너무 어두워. 길을 잃었어.`;
+  saveBroadcastSpeech(currentPet, {
+    text: speech, at: Date.now(), to: '__sys__',
+  });
+}
+
 
 /**
  * Up/Down 게임 UI
