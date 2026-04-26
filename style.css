@@ -2522,3 +2522,307 @@ body {
   .bt-tutorial-text { font-size: 11px; }
   .bt-tutorial-title { font-size: 12px; }
 }
+
+/* ──────────────────────────────────────
+   치명타 플래시 오버레이
+   ────────────────────────────────────── */
+.critical-flash-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(255,215,0,0.4), rgba(255,68,68,0.3) 60%, rgba(0,0,0,0.5));
+  animation: criticalOverlayFlash 1.1s ease-out forwards;
+}
+@keyframes criticalOverlayFlash {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  30%  { opacity: 0.7; }
+  60%  { opacity: 0.4; }
+  100% { opacity: 0; }
+}
+.critical-flash-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: 'Courier New', monospace;
+  font-size: 48px;
+  font-weight: bold;
+  letter-spacing: 6px;
+  color: #ffd700;
+  text-shadow:
+    0 0 12px #ff4444,
+    0 0 32px #ff4444,
+    0 0 52px #ffd700,
+    0 0 72px rgba(255,255,255,0.5);
+  animation: criticalTextPulse 1.1s ease-out forwards;
+}
+@keyframes criticalTextPulse {
+  0%   { transform: translate(-50%, -50%) scale(0.3); opacity: 0; filter: blur(8px); }
+  20%  { transform: translate(-50%, -50%) scale(1.4); opacity: 1; filter: blur(0); }
+  40%  { transform: translate(-50%, -50%) scale(1.0); }
+  80%  { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.2); opacity: 0; }
+}
+
+/* 치명타 다이스 강조 */
+.bt-dice-face.critical, .bt-dice-num.critical {
+  color: #ffd700 !important;
+  text-shadow:
+    0 0 12px #ffd700,
+    0 0 24px #ff8800,
+    0 0 36px rgba(255,68,68,0.5) !important;
+  animation: criticalDiceGlow 1.5s ease-in-out infinite !important;
+}
+@keyframes criticalDiceGlow {
+  0%, 100% { filter: brightness(1.0); }
+  50%      { filter: brightness(1.5); }
+}
+
+@media (max-width: 480px) {
+  .critical-flash-text { font-size: 36px; letter-spacing: 4px; }
+}
+
+/* ──────────────────────────────────────
+   이모지 반응 시스템
+   ────────────────────────────────────── */
+.emoji-host {
+  position: relative;
+  display: inline-block;
+}
+.emoji-reaction {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #050a07;
+  border: 1px solid currentColor;
+  padding: 3px 8px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  margin-bottom: 4px;
+  animation: emojiReactionPop 2.2s ease-out forwards;
+  z-index: 100;
+}
+@keyframes emojiReactionPop {
+  0%   { transform: translateX(-50%) translateY(8px) scale(0.5); opacity: 0; }
+  15%  { transform: translateX(-50%) translateY(-2px) scale(1.15); opacity: 1; }
+  30%  { transform: translateX(-50%) translateY(0) scale(1); }
+  80%  { transform: translateX(-50%) translateY(-4px); opacity: 1; }
+  100% { transform: translateX(-50%) translateY(-12px); opacity: 0; }
+}
+.emoji-reaction.emoji-joy   { color: #f0c074; border-color: #e8a853; }
+.emoji-reaction.emoji-sad   { color: #7d9cb3; border-color: #5a8099; }
+.emoji-reaction.emoji-shock { color: #c9a8e0; border-color: #a87dc9; }
+.emoji-reaction.emoji-angry { color: #e8956f; border-color: #c97d5f; }
+
+.emoji-reaction-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+  padding: 4px 8px;
+  background: rgba(0,0,0,0.3);
+  border: 1px dotted #2d5a3e;
+}
+.emoji-bar-label {
+  color: #5fb37a;
+  font-size: 10px;
+  letter-spacing: 1px;
+  margin-right: 4px;
+}
+.emoji-react-btn {
+  flex: 1;
+  background: #0a1410;
+  border: 1px solid #2d5a3e;
+  color: #c9c9c9;
+  padding: 4px 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.emoji-react-btn:hover {
+  background: #0f2218;
+  border-color: #5fb37a;
+  color: #03B352;
+  transform: scale(1.05);
+}
+.emoji-react-btn:active {
+  transform: scale(0.95);
+}
+.emoji-react-face {
+  font-family: 'Courier New', monospace;
+  letter-spacing: 1px;
+}
+
+/* ──────────────────────────────────────
+   가이드 모달 + 작은 [?] 버튼
+   ────────────────────────────────────── */
+.bt-guide-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid #a87dc9;
+  color: #c9a8e0;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.bt-guide-btn:hover {
+  background: rgba(168, 125, 201, 0.2);
+  box-shadow: 0 0 8px rgba(168, 125, 201, 0.4);
+}
+.bt-guide-btn:active {
+  transform: scale(0.92);
+}
+
+.bt-guide-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 11800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: btGuideFadeIn 0.25s ease-out;
+}
+@keyframes btGuideFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.bt-guide-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  background: linear-gradient(90deg, rgba(168,125,201,0.2), rgba(125,156,179,0.1));
+  border-bottom: 1px solid #5a4a8a;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.bt-guide-title {
+  color: #c9a8e0;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+.bt-guide-close {
+  color: #888;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 0.15s;
+}
+.bt-guide-close:hover {
+  color: #c9a8e0;
+}
+
+.bt-guide-modal::before { content: ''; }
+.bt-guide-modal > * {
+  /* nothing here, structure below */
+}
+.bt-guide-modal {
+  /* outer flex centers child */
+}
+.bt-guide-modal .bt-guide-head,
+.bt-guide-modal .bt-guide-body {
+  background: #0a0a14;
+}
+.bt-guide-modal {
+  padding: 0;
+}
+.bt-guide-modal .bt-guide-head {
+  width: min(94vw, 500px);
+  margin: 0 auto;
+  border: 1px solid #a87dc9;
+  border-bottom: 1px dotted #5a4a8a;
+}
+.bt-guide-body {
+  width: min(94vw, 500px);
+  max-height: 70vh;
+  overflow-y: auto;
+  margin: 0 auto;
+  padding: 16px 18px;
+  border: 1px solid #a87dc9;
+  border-top: none;
+  font-family: 'Courier New', monospace;
+}
+
+/* 위 구조가 복잡 - 단순화 */
+
+/* 가이드 모달 정리 (단순화 버전이 위의 복잡한 셀렉터 덮어씀) */
+.bt-guide-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.bt-guide-modal .bt-guide-head,
+.bt-guide-modal .bt-guide-body {
+  width: min(94vw, 500px);
+  font-family: 'Courier New', monospace;
+}
+.bt-guide-modal .bt-guide-head {
+  background: linear-gradient(90deg, rgba(168,125,201,0.2), rgba(125,156,179,0.1));
+  border: 1px solid #a87dc9;
+  border-bottom: 1px dotted #5a4a8a;
+  padding: 14px 18px;
+}
+.bt-guide-modal .bt-guide-body {
+  background: #0a0a14;
+  border: 1px solid #a87dc9;
+  border-top: none;
+  padding: 16px 18px;
+  max-height: 65vh;
+  overflow-y: auto;
+}
+
+.bt-guide-section {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: rgba(168, 125, 201, 0.05);
+  border-left: 2px solid #a87dc9;
+}
+.bt-guide-section.critical {
+  background: rgba(255, 215, 0, 0.06);
+  border-left-color: #ffd700;
+}
+.bt-guide-section-title {
+  color: #c9a8e0;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.bt-guide-section.critical .bt-guide-section-title {
+  color: #ffd700;
+  text-shadow: 0 0 8px rgba(255,215,0,0.4);
+}
+.bt-guide-section-text {
+  color: #d4c4e8;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.bt-guide-section-text strong {
+  color: #f0e0ff;
+}
+
+@media (max-width: 480px) {
+  .bt-guide-modal .bt-guide-head { padding: 12px; }
+  .bt-guide-modal .bt-guide-body { padding: 12px; max-height: 75vh; }
+  .bt-guide-section-text { font-size: 10.5px; }
+}

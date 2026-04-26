@@ -608,12 +608,13 @@ export const Backend = {
   /**
    * 2) 공격 다이스 등록 - 공격자만 호출
    */
-  async submitPvpAttack(battleId, slot, dice, variant) {
+  async submitPvpAttack(battleId, slot, dice, variant, critical = false) {
     const updater = (b) => {
       if (b.status !== 'active' || b.phase !== 'attack') return b;
       if (b.currentAttacker !== slot) return b;
       b.attackDice = dice;
       b.attackVariant = variant;
+      b.attackCritical = !!critical;
       b.phase = 'defense';
       b.updatedAt = Date.now();
       return b;
@@ -624,7 +625,7 @@ export const Backend = {
   /**
    * 3) 방어 등록 - 방어자만 호출. resolve 즉시 실행
    */
-  async submitPvpDefense(battleId, slot, dice, action) {
+  async submitPvpDefense(battleId, slot, dice, action, critical = false) {
     const updater = (b) => {
       if (b.status !== 'active' || b.phase !== 'defense') return b;
       // 방어자 = currentAttacker가 아닌 쪽
@@ -632,6 +633,7 @@ export const Backend = {
       if (defenderSlot !== slot) return b;
       b.defenseDice = dice;
       b.defenseAction = action;
+      b.defenseCritical = !!critical;
       b.phase = 'resolve';
 
       // 데미지 계산 + 적용
@@ -692,8 +694,10 @@ export const Backend = {
       b.phase = 'attack';
       b.attackDice = null;
       b.attackVariant = null;
+      b.attackCritical = false;
       b.defenseDice = null;
       b.defenseAction = null;
+      b.defenseCritical = false;
       b.pendingDamage = 0;
       b.cheer = null;
       b.updatedAt = Date.now();
@@ -708,6 +712,20 @@ export const Backend = {
   async setPvpCheer(battleId, text) {
     const updater = (b) => {
       b.cheer = text;
+      b.updatedAt = Date.now();
+      return b;
+    };
+    return this._mutateBattle(battleId, updater);
+  },
+
+  /**
+   * 이모지 반응 (PvP 양쪽 동기화)
+   * @param {string} slot - 'p1' or 'p2'
+   * @param {string} emojiId - 'joy' | 'sad' | 'shock' | 'angry'
+   */
+  async setPvpEmoji(battleId, slot, emojiId) {
+    const updater = (b) => {
+      b.lastEmoji = { slot, id: emojiId, at: Date.now() };
       b.updatedAt = Date.now();
       return b;
     };

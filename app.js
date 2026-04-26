@@ -411,7 +411,7 @@ function renderCommandButtons() {
           <button class="cmd admin" data-act="radio-test">📻 라디오 테스트</button>
           <button class="cmd admin" data-act="radio-broadcast">📡 모든 크루에게 라디오 발사</button>
           <button class="cmd admin" data-act="noise-test">⚡ 노이즈 테스트</button>
-          <button class="cmd admin" data-act="battle-tutorial">📖 BATTLE 튜토리얼 시작</button>
+          <button class="cmd admin" data-act="battle-tutorial">📖 BATTLE 가이드 보기</button>
         `,
       },
       {
@@ -490,7 +490,7 @@ function renderCommandButtons() {
       else if (act === 'radio-test') testRadioPopup();
       else if (act === 'radio-broadcast') broadcastRadioToAllCrew();
       else if (act === 'noise-test') triggerNoiseEffect();
-      else if (act === 'battle-tutorial') showBattleGame(true);
+      else if (act === 'battle-tutorial') showBattleGuide();
       else if (act === 'finale') {
         // 이미 봉인된 경우 편지 보기, 아니면 답장 UI
         if (currentPet?.finaleSealed) showSealedLetter();
@@ -1641,6 +1641,7 @@ function playSfx(kind = 'happy') {
       blip:   { notes: [1318.5], dur: 0.05, peak: 0.05 },                  // 단음 클릭
       fanfare:{ notes: [523.25, 659.25, 783.99, 1046.5, 1046.5, 1318.5], dur: 0.12, peak: 0.10 },  // C-E-G-C'-C'-E' 팡파레
       defeat: { notes: [392, 349.23, 311.13, 261.63], dur: 0.18, peak: 0.07 },   // G-F-Eb-C 하강 (패배)
+      critical:{ notes: [1318.5, 1567.98, 1975.53, 1318.5, 2093], dur: 0.10, peak: 0.12 },  // E'-G'-B'-E'-C'' 폭발
     };
     const preset = presets[kind] || presets.happy;
 
@@ -5838,15 +5839,7 @@ function showMinigameHub() {
       else if (game === 'blackjack') showBlackjackGame();
       else if (game === 'tictactoe') showTicTacToeGame();
       else if (game === 'maze') showMazeGame();
-      else if (game === 'battle') {
-        // 튜토리얼 미경험 시 안내 분기
-        const tutorialKey = `battleTutorialSeen_${currentUser.name}`;
-        if (!localStorage.getItem(tutorialKey) && !isMinigameTestMode()) {
-          showBattleTutorialPrompt();
-        } else {
-          showBattleGame();
-        }
-      }
+      else if (game === 'battle') showBattleGame();
       else if (game === 'pvp') showPvpLobby();
     });
   });
@@ -7147,8 +7140,79 @@ const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅', '⚀', '⚁', '⚂
 function rollD10() {
   return Math.floor(Math.random() * 10) + 1;
 }
+
+/**
+ * 치명타 판정 - 1% 확률
+ */
+function rollCritical() {
+  return Math.random() < 0.01;
+}
+
+/**
+ * 다이스 굴림 (치명타 적용)
+ * @returns {object} { dice, critical }
+ */
+function rollD10WithCrit() {
+  const critical = rollCritical();
+  return {
+    dice: critical ? 15 : rollD10(),
+    critical,
+  };
+}
+
+/**
+ * 강타(critical 가능) / 견제(안정형, critical 불가)
+ */
+function rollAttackDice(variant) {
+  if (variant === 'quick') {
+    return { dice: Math.floor(Math.random() * 6) + 1 + 2, critical: false };
+  }
+  return rollD10WithCrit();
+}
+
+/**
+ * 화면 전체 치명타 플래시
+ */
+function showCriticalFlash(label = 'CRITICAL!') {
+  const overlay = document.createElement('div');
+  overlay.className = 'critical-flash-overlay';
+  overlay.innerHTML = `<div class="critical-flash-text">${label}</div>`;
+  document.body.appendChild(overlay);
+  playSfx('critical');
+  setTimeout(() => overlay.remove(), 1100);
+}
+
+/**
+ * 이모지 반응 정의
+ */
+const EMOJI_REACTIONS = [
+  { id: 'joy',     face: '( ^_^ )', label: '기쁨' },
+  { id: 'sad',     face: '( ;_; )', label: '슬픔' },
+  { id: 'shock',   face: '( O_O )', label: '당황' },
+  { id: 'angry',   face: '( >_< )', label: '분노' },
+];
+
+/**
+ * 이름 옆에 이모지 반응 띄우기 (인라인)
+ * @param {Element} container - 이름 라벨이 있는 부모
+ * @param {string} emojiId - EMOJI_REACTIONS의 id
+ */
+function showEmojiReaction(container, emojiId) {
+  const def = EMOJI_REACTIONS.find(r => r.id === emojiId);
+  if (!def || !container) return;
+  // 기존 반응 제거
+  const old = container.querySelector('.emoji-reaction');
+  if (old) old.remove();
+  const el = document.createElement('span');
+  el.className = `emoji-reaction emoji-${emojiId}`;
+  el.textContent = def.face;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 2200);
+}
+
 function diceFace(n) {
-  // 1~10 모두 표시 가능 (6면체 + 7~10은 숫자만)
+  // 1~10 모두 표시 가능 (6면체 + 7~10은 숫자만, 15는 ★)
+  if (n === 15) return '★';
   if (n >= 1 && n <= 6) return ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'][n - 1];
   return n.toString();
 }
@@ -7352,113 +7416,85 @@ function pickMarsAction(marsHp, maxHp) {
 }
 
 
-/**
- * BATTLE 튜토리얼 프롬프트 (첫 진입 시)
- */
-function showBattleTutorialPrompt() {
-  const overlay = document.createElement('div');
-  overlay.style.cssText = `
-    position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 10001;
-    display: flex; align-items: center; justify-content: center;
-  `;
-  overlay.innerHTML = `
-    <div style="background: #050a07; border: 1px solid #5fb37a;
-      box-shadow: 0 0 24px rgba(3,179,82,0.3); padding: 18px;
-      max-width: 360px; width: 92vw; font-family: 'Courier New', monospace;">
-      <div style="color: #03B352; font-size: 13px; margin-bottom: 10px; letter-spacing: 1px;">
-        &gt; 첫 결투 시퀀스 감지
-      </div>
-      <div style="color: #c9c9c9; font-size: 12px; line-height: 1.7; margin-bottom: 14px;">
-        대상 개체와의 첫 결투입니다.<br>
-        <span style="color: #5fb37a;">학습 시퀀스</span>를 활성화하면<br>
-        각 단계마다 관찰 노트가 표시됩니다.
-      </div>
-      <div style="display: flex; gap: 8px;">
-        <button id="bt-tutorial-yes" style="
-          flex: 1; padding: 10px; background: #0a3818;
-          border: 1px solid #03B352; color: #03B352;
-          font-family: inherit; font-size: 12px; cursor: pointer;
-          font-weight: bold;">
-          📖 학습 시퀀스
-        </button>
-        <button id="bt-tutorial-no" style="
-          flex: 1; padding: 10px; background: transparent;
-          border: 1px solid #666; color: #888;
-          font-family: inherit; font-size: 12px; cursor: pointer;">
-          정상 진행
-        </button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  const close = (tutorial) => {
-    overlay.remove();
-    localStorage.setItem(`battleTutorialSeen_${currentUser.name}`, '1');
-    showBattleGame(tutorial);
-  };
-  overlay.querySelector('#bt-tutorial-yes').addEventListener('click', () => close(true));
-  overlay.querySelector('#bt-tutorial-no').addEventListener('click', () => close(false));
-}
 
 /**
- * 튜토리얼 단계별 안내 텍스트 (연구자 시점)
+ * BATTLE 가이드 (통합 모달)
+ * 작은 [?] 버튼 클릭 시 한 번에 모든 룰을 보여줌
  */
-const BATTLE_TUTORIAL = {
-  intro: {
-    title: '시뮬레이션 결투 · 개요',
-    text: `[관찰 노트] 본 시퀀스는 비물리적 시뮬레이션이며, 대상 개체에 실제 손상이 가해지지 않는다.\n\n양 측 HP 30. 일방의 HP가 0에 도달하면 시퀀스가 종료된다.\n결투는 1D10 다이스 판정 방식을 따른다.`,
-  },
-  preroll: {
-    title: '선공 판정',
-    text: `[프로토콜 1] 양 측이 각각 1D10을 굴려 더 높은 값을 기록한 쪽이 선공권을 획득한다.\n\n동률 시 재굴림한다.\n공격 → 방어/회피 순으로 1턴이 종료되며, 양 측 1회씩 공격이 이루어지면 라운드가 갱신된다.`,
-  },
-  attack_choice: {
-    title: '공격 변형',
-    text: `[프로토콜 2] 공격 옵션은 두 가지로 분기된다.\n\n⚔ 강타 — 1D10 (1~10). 분산 큼, 최댓값 획득 가능.\n🗡 견제 — 1D6+2 (3~8). 분산 작음, 최댓값 제한.\n\n전략적으로 선택할 것.`,
-  },
-  defense_choice: {
-    title: '방어 변형',
-    text: `[프로토콜 3] 공격 다이스가 굴려진 후, 방어자는 두 가지로 응답한다.\n\n🛡 방어 — 방어 다이스 굴려 공격값에서 차감. 잔여분이 데미지.\n💨 회피 — 8 이상이면 데미지 0 (완전 회피). 7 이하면 공격 전체 적중.\n\n방어는 안정적, 회피는 도박적이다.`,
-  },
-  damage: {
-    title: '데미지 산정',
-    text: `[관찰 결과] 데미지 = 공격 다이스 - 방어 다이스 (또는 회피 실패 시 공격 전체).\n\n해당 값만큼 HP가 감소한다.\nHP 0 도달 시 시뮬레이션 종료.\n\n시각적 피드백: HP 바 흔들림 및 -N 수치 표시.`,
-  },
-  end: {
-    title: '시퀀스 종료',
-    text: `[기록 완료] 본 시뮬레이션은 학습용으로, 실 데이터에 반영되지 않는다.\n\n이후 진입하는 결투는 정상 시퀀스로 처리되며, 보상/페널티가 적용된다.\n\n관찰자 측 추가 안내는 없다.`,
-  },
-};
-
-/**
- * 튜토리얼 박스 오버레이 표시
- * @param {string} stepKey - BATTLE_TUTORIAL의 키
- * @param {function} onConfirm - 확인 클릭 시
- */
-function showBattleTutorialStep(stepKey, onConfirm) {
-  const step = BATTLE_TUTORIAL[stepKey];
-  if (!step) { onConfirm?.(); return; }
-
+function showBattleGuide() {
   // 기존 박스 제거
-  const existing = document.querySelector('.bt-tutorial-box');
-  if (existing) existing.remove();
+  const existing = document.querySelector('.bt-guide-modal');
+  if (existing) { existing.remove(); return; }
 
   const box = document.createElement('div');
-  box.className = 'bt-tutorial-box';
+  box.className = 'bt-guide-modal';
   box.innerHTML = `
-    <div class="bt-tutorial-head">
-      <span class="bt-tutorial-icon">📖</span>
-      <span class="bt-tutorial-title">${step.title}</span>
+    <div class="bt-guide-head">
+      <span class="bt-guide-title">📖 결투 시스템 · 관찰 기록</span>
+      <span class="bt-guide-close">✕</span>
     </div>
-    <div class="bt-tutorial-text">${step.text.replace(/\n/g, '<br>')}</div>
-    <button class="bt-tutorial-confirm">기록 확인 ▸</button>
+    <div class="bt-guide-body">
+      <div class="bt-guide-section">
+        <div class="bt-guide-section-title">[관찰 노트] 시뮬레이션</div>
+        <div class="bt-guide-section-text">
+          본 시퀀스는 비물리적 시뮬레이션이다. 양측 HP 30, 일방의 HP 0 도달 시 종료된다. 1D10 다이스로 판정한다.
+        </div>
+      </div>
+
+      <div class="bt-guide-section">
+        <div class="bt-guide-section-title">[프로토콜 1] 선공 판정</div>
+        <div class="bt-guide-section-text">
+          양측이 각각 1D10을 굴려 더 높은 값을 기록한 쪽이 선공권을 획득한다. 동률 시 재굴림.<br>
+          공격 → 방어/회피 순으로 1턴이 끝나고, 양측 1회씩 공격하면 라운드 갱신.
+        </div>
+      </div>
+
+      <div class="bt-guide-section">
+        <div class="bt-guide-section-title">[프로토콜 2] 공격 변형</div>
+        <div class="bt-guide-section-text">
+          ⚔ <strong>강타</strong> — 1D10 (1~10). 분산 큼, 최댓값 노릴 수 있음.<br>
+          🗡 <strong>견제</strong> — 1D6+2 (3~8). 분산 작음, 안정적이나 최댓값 제한.
+        </div>
+      </div>
+
+      <div class="bt-guide-section">
+        <div class="bt-guide-section-title">[프로토콜 3] 방어 변형</div>
+        <div class="bt-guide-section-text">
+          🛡 <strong>방어</strong> — 방어 다이스를 공격값에서 차감. 잔여분이 데미지.<br>
+          💨 <strong>회피</strong> — 8 이상이면 데미지 0. 7 이하면 공격 전체 적중.<br>
+          방어는 안정적, 회피는 도박적이다.
+        </div>
+      </div>
+
+      <div class="bt-guide-section critical">
+        <div class="bt-guide-section-title">[변칙 관측] ★ 치명타</div>
+        <div class="bt-guide-section-text">
+          1% 확률로 다이스 결과가 ★(15)로 기록된다. 공격/방어 양쪽 모두에서 발생 가능하며, 발현 시 화면 전체 플래시가 동반된다.<br>
+          (※ 견제 옵션은 치명타 발현 불가)
+        </div>
+      </div>
+
+      <div class="bt-guide-section">
+        <div class="bt-guide-section-title">[관찰 결과] 데미지 산정</div>
+        <div class="bt-guide-section-text">
+          데미지 = 공격 - 방어 (또는 회피 실패 시 공격 전체). HP 바 흔들림 및 -N 수치 시각화.
+        </div>
+      </div>
+
+      <div class="bt-guide-section">
+        <div class="bt-guide-section-title">[부가 시스템] 반응</div>
+        <div class="bt-guide-section-text">
+          상단 반응 버튼으로 ( ^_^ ) 기쁨 / ( ;_; ) 슬픔 / ( O_O ) 당황 / ( &gt;_&lt; ) 분노 표현 가능. PvP에서는 상대에게도 표시된다.
+        </div>
+      </div>
+    </div>
   `;
   document.body.appendChild(box);
 
-  box.querySelector('.bt-tutorial-confirm').addEventListener('click', () => {
-    box.remove();
-    onConfirm?.();
+  box.querySelector('.bt-guide-close').addEventListener('click', () => box.remove());
+  // 바깥 클릭 시 닫기
+  box.addEventListener('click', (e) => {
+    if (e.target === box) box.remove();
   });
 }
 
@@ -7466,7 +7502,7 @@ function showBattleTutorialStep(stepKey, onConfirm) {
  * PvE BATTLE 턴제 진행
  * Phase 흐름: preroll → attack → defense → roundover → (다음 공격자) → ...
  */
-function showBattleGame(tutorialMode = false) {
+function showBattleGame() {
   if (!currentPet || currentPet.isDead) return;
   const existing = document.getElementById('minigame-modal');
   if (existing) { existing.remove(); return; }
@@ -7477,22 +7513,20 @@ function showBattleGame(tutorialMode = false) {
     crewHp: cfg.MAX_HP,
     marsHp: cfg.MAX_HP,
     round: 1,
-    phase: 'preroll',  // 'preroll' | 'attack' | 'defense' | 'roundover' | 'done'
-    firstAttacker: null,  // 'crew' | 'mars' (선턴)
-    currentAttacker: null,  // 현재 공격자
+    phase: 'preroll',
+    firstAttacker: null,
+    currentAttacker: null,
     attackDice: null,
     defenseDice: null,
-    defenseAction: null,  // 'defend' | 'dodge' (방어자가 선택)
+    defenseAction: null,
     pendingDamage: 0,
-    log: [],            // 최근 이벤트 (로그)
-    cheer: null,        // MARS II 응원 (특수 케이스 - 직접 표시)
+    log: [],
+    cheer: null,
     crewPreroll: null,
     marsPreroll: null,
-    result: null,       // 'win' | 'lose'
+    result: null,
     rewardText: '',
     animating: false,
-    tutorial: tutorialMode,       // 튜토리얼 모드 여부
-    tutorialShown: {},            // 어느 단계 안내 띄웠는지 추적
   };
 
   const modal = document.createElement('div');
@@ -7505,18 +7539,6 @@ function showBattleGame(tutorialMode = false) {
     wrapper.parentNode.insertBefore(modal, wrapper);
   }
   attachBattleHandlers(modal, state);
-
-  // 튜토리얼: 인트로 → preroll 안내
-  if (state.tutorial) {
-    setTimeout(() => {
-      showBattleTutorialStep('intro', () => {
-        state.tutorialShown.intro = true;
-        showBattleTutorialStep('preroll', () => {
-          state.tutorialShown.preroll = true;
-        });
-      });
-    }, 300);
-  }
 }
 
 function renderBattle(modal, state) {
@@ -7684,16 +7706,16 @@ function renderBattle(modal, state) {
     diceHTML = `
       <div class="bt-dice-row attack">
         <div class="bt-dice-side attacker">
-          <div class="bt-dice-label" style="color:${attColor};">⚔ ${attLabel}</div>
-          <div class="bt-dice-face attack">${diceFace(state.attackDice)}</div>
-          <div class="bt-dice-num huge">${state.attackDice}</div>
+          <div class="bt-dice-label" style="color:${attColor};">⚔ ${attLabel}${state.attackCritical ? ' ★' : ''}</div>
+          <div class="bt-dice-face attack ${state.attackCritical ? 'critical' : ''}">${diceFace(state.attackDice)}</div>
+          <div class="bt-dice-num huge ${state.attackCritical ? 'critical' : ''}">${state.attackDice}</div>
           <div class="bt-dice-action">${state.currentAttacker === 'crew' ? variantLabel : '⚔ 공격'}</div>
         </div>
         <div class="bt-dice-vs">→</div>
         <div class="bt-dice-side defender">
-          <div class="bt-dice-label" style="color:${defColor};">${defLabel}</div>
-          <div class="bt-dice-face">${state.defenseDice !== null ? diceFace(state.defenseDice) : '?'}</div>
-          <div class="bt-dice-num huge">${state.defenseDice !== null ? state.defenseDice : '-'}</div>
+          <div class="bt-dice-label" style="color:${defColor};">${defLabel}${state.defenseCritical ? ' ★' : ''}</div>
+          <div class="bt-dice-face ${state.defenseCritical ? 'critical' : ''}">${state.defenseDice !== null ? diceFace(state.defenseDice) : '?'}</div>
+          <div class="bt-dice-num huge ${state.defenseCritical ? 'critical' : ''}">${state.defenseDice !== null ? state.defenseDice : '-'}</div>
           <div class="bt-dice-action">${state.defenseAction === 'defend' ? '🛡 방어' : state.defenseAction === 'dodge' ? '💨 회피' : '...'}</div>
         </div>
       </div>
@@ -7712,11 +7734,12 @@ function renderBattle(modal, state) {
     `;
   } else if (state.phase === 'preroll') {
     actionHTML = `
-      <div style="text-align:center;margin-top:14px;">
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;">
         <button class="bt-roll-btn" id="bt-roll-preroll" ${state.animating ? 'disabled' : ''}>
           <span class="bt-roll-dice">🎲</span>
           <span class="bt-roll-label">선턴 다이스 굴리기</span>
         </button>
+        <button class="bt-guide-btn" id="bt-guide-btn" title="결투 가이드">?</button>
       </div>
     `;
   } else if (state.phase === 'attack') {
@@ -7775,7 +7798,7 @@ function renderBattle(modal, state) {
 
   modal.innerHTML = `
     <div class="maze-popup-head">
-      <span>&gt; BATTLE.EXE · ROUND ${state.round} ${isTest ? '· <span style="color:#e8a853;">[TEST]</span>' : ''}${state.tutorial ? '· <span style="color:#a87dc9;">[TUTORIAL]</span>' : ''}</span>
+      <span>&gt; BATTLE.EXE · ROUND ${state.round} ${isTest ? '· <span style="color:#e8a853;">[TEST]</span>' : ''}</span>
       <span class="maze-close" id="bt-close" title="닫기">─ _ ✕</span>
     </div>
     <div class="maze-popup-body">
@@ -7785,15 +7808,27 @@ function renderBattle(modal, state) {
 
       <!-- HP 바 -->
       <div class="bt-hp-row ${state.pendingDamage > 0 && state.currentAttacker === 'crew' ? 'bt-hp-hit' : ''}">
-        <span class="bt-hp-label" style="color:#c97d5f;">MARS II</span>
+        <span class="bt-hp-label emoji-host" data-side="mars" style="color:#c97d5f;">MARS II</span>
         <div class="bt-hp-bars">${marsBarsHTML}</div>
         <span class="bt-hp-value">${state.marsHp}/${state.maxHp}</span>
       </div>
       <div class="bt-hp-row ${state.pendingDamage > 0 && state.currentAttacker === 'mars' ? 'bt-hp-hit' : ''}">
-        <span class="bt-hp-label" style="color:#03B352;">${currentUser.name}</span>
+        <span class="bt-hp-label emoji-host" data-side="crew" style="color:#03B352;">${currentUser.name}</span>
         <div class="bt-hp-bars">${crewBarsHTML}</div>
         <span class="bt-hp-value">${state.crewHp}/${state.maxHp}</span>
       </div>
+
+      <!-- 이모지 반응 버튼 (크루용) -->
+      ${!done ? `
+        <div class="emoji-reaction-bar">
+          <span class="emoji-bar-label">반응:</span>
+          ${EMOJI_REACTIONS.map(r => `
+            <button class="emoji-react-btn" data-emoji="${r.id}" title="${r.label}">
+              <span class="emoji-react-face">${r.face}</span>
+            </button>
+          `).join('')}
+        </div>
+      ` : ''}
 
       ${diceHTML}
       ${actionHTML}
@@ -7815,6 +7850,8 @@ function attachBattleHandlers(modal, state) {
   document.getElementById('bt-roll-preroll')?.addEventListener('click', () =>
     handleBattlePreroll(modal, state));
 
+  document.getElementById('bt-guide-btn')?.addEventListener('click', showBattleGuide);
+
   modal.querySelectorAll('[data-attack]').forEach(btn => {
     btn.addEventListener('click', () => {
       if (state.animating) return;
@@ -7828,6 +7865,15 @@ function attachBattleHandlers(modal, state) {
       if (state.animating) return;
       const action = btn.dataset.defaction;
       handleBattleCrewDefense(modal, state, action);
+    });
+  });
+
+  // 이모지 반응 (크루 → 본인 라벨 옆에 표시)
+  modal.querySelectorAll('.emoji-react-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const emojiId = btn.dataset.emoji;
+      const host = modal.querySelector('.emoji-host[data-side="crew"]');
+      if (host) showEmojiReaction(host, emojiId);
     });
   });
 
@@ -7883,6 +7929,8 @@ async function handleBattlePreroll(modal, state) {
   state.attackDice = null;
   state.defenseDice = null;
   state.defenseAction = null;
+  state.attackCritical = false;
+  state.defenseCritical = false;
   state.crewPreroll = null;
   state.marsPreroll = null;
   state.animating = false;
@@ -7894,10 +7942,6 @@ async function handleBattlePreroll(modal, state) {
   if (state.currentAttacker === 'mars') {
     await new Promise(r => setTimeout(r, 600));
     handleBattleMarsAttack(modal, state);
-  } else if (state.tutorial && !state.tutorialShown.attack_choice) {
-    // 크루 공격 차례 + 튜토리얼: attack_choice 안내
-    state.tutorialShown.attack_choice = true;
-    showBattleTutorialStep('attack_choice');
   }
 }
 
@@ -7907,16 +7951,17 @@ async function handleBattlePreroll(modal, state) {
  */
 async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
   state.animating = true;
-  // 강타: 1D10 (1~10, 변동 큼)
-  // 견제: 1D6 + 2 (3~8, 안정적이지만 높은 값 못 나옴)
-  if (variant === 'quick') {
-    state.attackDice = Math.floor(Math.random() * 6) + 1 + 2;  // 3~8
-    state.attackVariant = 'quick';
-  } else {
-    state.attackDice = rollD10();
-    state.attackVariant = 'heavy';
-  }
+  // 강타: 1D10 (치명타 가능) / 견제: 1D6+2 (안정형)
+  const roll = rollAttackDice(variant);
+  state.attackDice = roll.dice;
+  state.attackVariant = variant;
+  state.attackCritical = roll.critical;
   playSfx('blip');
+
+  // 치명타 연출
+  if (roll.critical) {
+    showCriticalFlash('CRITICAL ATTACK!');
+  }
 
   // MARS II 응원 - 크루 다이스 값에 따라 다르게
   if (Math.random() < 0.55) {
@@ -7932,16 +7977,23 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
   // 1) 크루 공격 다이스만 먼저 표시
   state.defenseDice = null;
   state.defenseAction = null;
+  state.attackCritical = false;
+  state.defenseCritical = false;
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
   await new Promise(r => setTimeout(r, 700));
 
-  // 2) MARS II 방어/회피 결정 + 다이스
+  // 2) MARS II 방어/회피 결정 + 다이스 (치명타 가능)
   state.cheer = null;
   const r = Math.random();
   state.defenseAction = r < 0.6 ? 'defend' : 'dodge';
-  state.defenseDice = rollD10();
+  const defRoll = rollD10WithCrit();
+  state.defenseDice = defRoll.dice;
+  state.defenseCritical = defRoll.critical;
   playSfx('blip');
+  if (defRoll.critical) {
+    showCriticalFlash('CRITICAL DEFENSE!');
+  }
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
 
@@ -7976,11 +8028,6 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
   attachBattleHandlers(modal, state);
 
   // 튜토리얼: 첫 데미지 후 damage 안내
-  if (state.tutorial && !state.tutorialShown.damage && state.pendingDamage > 0) {
-    state.tutorialShown.damage = true;
-    setTimeout(() => showBattleTutorialStep('damage'), 800);
-  }
-
   await new Promise(r4 => setTimeout(r4, 1100));
 
   // 5) pendingDamage 정리
@@ -7994,10 +8041,6 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
     renderBattle(modal, state);
     attachBattleHandlers(modal, state);
     playBattleFinishSound(true);
-    if (state.tutorial && !state.tutorialShown.end) {
-      state.tutorialShown.end = true;
-      setTimeout(() => showBattleTutorialStep('end'), 1500);
-    }
     return;
   }
 
@@ -8005,6 +8048,8 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
   state.attackDice = null;
   state.defenseDice = null;
   state.defenseAction = null;
+  state.attackCritical = false;
+  state.defenseCritical = false;
   state.pendingDamage = 0;
   state.currentAttacker = state.currentAttacker === 'crew' ? 'mars' : 'crew';
 
@@ -8030,8 +8075,14 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
  */
 async function handleBattleMarsAttack(modal, state) {
   state.animating = true;
-  state.attackDice = rollD10();
+  const roll = rollD10WithCrit();
+  state.attackDice = roll.dice;
+  state.attackCritical = roll.critical;
+  state.attackVariant = 'heavy';
   playSfx('blip');
+  if (roll.critical) {
+    showCriticalFlash('CRITICAL ATTACK!');
+  }
 
   // MARS II 자기 공격 어필 - 다이스 값에 따라
   if (Math.random() < 0.55) {
@@ -8045,17 +8096,13 @@ async function handleBattleMarsAttack(modal, state) {
   state.phase = 'defense';
   state.defenseDice = null;
   state.defenseAction = null;
+  state.attackCritical = false;
+  state.defenseCritical = false;
   state.animating = false;
 
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
   // 크루 입력 대기
-
-  // 튜토리얼: defense_choice 안내
-  if (state.tutorial && !state.tutorialShown.defense_choice) {
-    state.tutorialShown.defense_choice = true;
-    setTimeout(() => showBattleTutorialStep('defense_choice'), 300);
-  }
 }
 
 /**
@@ -8064,9 +8111,14 @@ async function handleBattleMarsAttack(modal, state) {
 async function handleBattleCrewDefense(modal, state, defAction) {
   state.animating = true;
   state.defenseAction = defAction;
-  state.defenseDice = rollD10();
+  const defRoll = rollD10WithCrit();
+  state.defenseDice = defRoll.dice;
+  state.defenseCritical = defRoll.critical;
   state.cheer = null;
   playSfx('blip');
+  if (defRoll.critical) {
+    showCriticalFlash('CRITICAL DEFENSE!');
+  }
 
   // 1) 방어/회피 다이스 표시
   renderBattle(modal, state);
@@ -8100,12 +8152,6 @@ async function handleBattleCrewDefense(modal, state, defAction) {
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
 
-  // 튜토리얼: 첫 데미지 후 damage 안내
-  if (state.tutorial && !state.tutorialShown.damage && state.pendingDamage > 0) {
-    state.tutorialShown.damage = true;
-    setTimeout(() => showBattleTutorialStep('damage'), 800);
-  }
-
   await new Promise(r => setTimeout(r, 1100));
 
   // 종료 체크
@@ -8117,10 +8163,6 @@ async function handleBattleCrewDefense(modal, state, defAction) {
     renderBattle(modal, state);
     attachBattleHandlers(modal, state);
     playBattleFinishSound(false);
-    if (state.tutorial && !state.tutorialShown.end) {
-      state.tutorialShown.end = true;
-      setTimeout(() => showBattleTutorialStep('end'), 1500);
-    }
     return;
   }
 
@@ -8128,6 +8170,8 @@ async function handleBattleCrewDefense(modal, state, defAction) {
   state.attackDice = null;
   state.defenseDice = null;
   state.defenseAction = null;
+  state.attackCritical = false;
+  state.defenseCritical = false;
   state.pendingDamage = 0;
   state.currentAttacker = state.currentAttacker === 'crew' ? 'mars' : 'crew';
 
@@ -8158,6 +8202,8 @@ function resolveBattleAttack(state, attacker) {
   const aDice = state.attackDice;
   const dDice = state.defenseDice;
   const dAct = state.defenseAction;
+  const aCrit = state.attackCritical ? '★ ' : '';
+  const dCrit = state.defenseCritical ? '★ ' : '';
 
   let damage = 0;
   let logText = '';
@@ -8165,17 +8211,17 @@ function resolveBattleAttack(state, attacker) {
   if (dAct === 'defend') {
     damage = Math.max(0, aDice - dDice);
     if (damage === 0) {
-      logText = `${attName} 공격 ${aDice} → ${defName} 방어 ${dDice}, 완전 차단!`;
+      logText = `${attName} ${aCrit}공격 ${aDice} → ${defName} ${dCrit}방어 ${dDice}, 완전 차단!`;
     } else {
-      logText = `${attName} 공격 ${aDice} → ${defName} 방어 ${dDice}, ${damage} 피해`;
+      logText = `${attName} ${aCrit}공격 ${aDice} → ${defName} ${dCrit}방어 ${dDice}, ${damage} 피해`;
     }
   } else if (dAct === 'dodge') {
     if (dDice >= cfg.DODGE_THRESHOLD) {
       damage = 0;
-      logText = `${attName} 공격 ${aDice} → ${defName} 회피 ${dDice} (${cfg.DODGE_THRESHOLD}+) 완전 회피!`;
+      logText = `${attName} ${aCrit}공격 ${aDice} → ${defName} ${dCrit}회피 ${dDice} 완전 회피!`;
     } else {
       damage = aDice;
-      logText = `${attName} 공격 ${aDice} → ${defName} 회피 실패 ${dDice}, ${damage} 피해!`;
+      logText = `${attName} ${aCrit}공격 ${aDice} → ${defName} 회피 실패 ${dDice}, ${damage} 피해!`;
     }
   }
 
@@ -8189,12 +8235,6 @@ function resolveBattleAttack(state, attacker) {
 async function onBattleFinish(state) {
   const cfg = CONFIG.MINIGAME_CONFIG.BATTLE;
   let reward, label;
-
-  // 튜토리얼 모드: 보상 없음, 저장 안 함
-  if (state.tutorial) {
-    state.rewardText = '(학습 시퀀스 · 데이터 비기록)';
-    return;
-  }
 
   if (state.result === 'win') {
     if (state.round <= 3) {
@@ -8514,12 +8554,32 @@ function showPvpBattle(battleId) {
     renderPvpBattle(modal, state);
     attachPvpBattleHandlers(modal, state);
 
+    // 상대방의 치명타 감지 (내가 굴린 게 아닌 경우만)
+    // attack critical: defense 페이즈 진입 + critical true + 공격자가 상대
+    if (b.phase === 'defense' && prev?.phase !== 'defense' && b.attackCritical && b.currentAttacker !== state.mySlot) {
+      showCriticalFlash('CRITICAL ATTACK!');
+    }
+    // defense critical: resolve 페이즈 진입 + critical true + 방어자가 상대
+    if (b.phase === 'resolve' && prev?.phase !== 'resolve' && b.defenseCritical) {
+      const defenderSlot = b.currentAttacker === 'p1' ? 'p2' : 'p1';
+      if (defenderSlot !== state.mySlot) {
+        showCriticalFlash('CRITICAL DEFENSE!');
+      }
+    }
+
+    // 상대방 이모지 반응 감지 (lastEmoji 변경 시)
+    if (b.lastEmoji && (!prev?.lastEmoji || b.lastEmoji.at !== prev.lastEmoji.at)) {
+      // 본인이 보낸 건 이미 표시됐으므로 상대방 것만 처리
+      if (b.lastEmoji.slot !== state.mySlot) {
+        const opHost = modal.querySelector('.emoji-host[data-side="op"]');
+        if (opHost) showEmojiReaction(opHost, b.lastEmoji.id);
+      }
+    }
+
     // 데미지 발생 시 (resolve 페이즈 진입) 팝업 + HP 흔들림
     if (b.phase === 'resolve' && prev?.phase !== 'resolve' && b.pendingDamage !== undefined) {
       const defenderSlot = b.currentAttacker === 'p1' ? 'p2' : 'p1';
       const target = defenderSlot === state.mySlot ? 'crew' : 'mars';
-      // PvP는 mars→opponent로 매핑됨 (renderPvpBattle 순서: 첫 row=상대, 둘째=나)
-      // 데미지 받는 사람이 나면 'crew' (둘째 row), 상대면 'mars' (첫째 row)
       setTimeout(() => spawnDamagePopup(modal, target, b.pendingDamage), 100);
       playSfx(b.pendingDamage > 0 ? (target === 'crew' ? 'angry' : 'happy') : 'cute');
 
@@ -8536,11 +8596,6 @@ function showPvpBattle(battleId) {
       } else if (b.status === 'done') {
         playBattleFinishSound(b.winner === state.mySlot);
       }
-    }
-
-    // 페이즈 진입 시 사운드
-    if (b.phase === 'attack' && prev?.phase !== 'attack' && b.attackDice === null) {
-      // 다이스 굴려야 할 차례 - 사운드는 클라가 굴릴 때 재생
     }
   });
 
@@ -8727,16 +8782,16 @@ function renderPvpBattle(modal, state) {
     diceHTML = `
       <div class="bt-dice-row attack">
         <div class="bt-dice-side attacker">
-          <div class="bt-dice-label" style="color:${attColor};">⚔ ${attName}</div>
-          <div class="bt-dice-face attack">${diceFace(b.attackDice)}</div>
-          <div class="bt-dice-num huge">${b.attackDice}</div>
+          <div class="bt-dice-label" style="color:${attColor};">⚔ ${attName}${b.attackCritical ? ' ★' : ''}</div>
+          <div class="bt-dice-face attack ${b.attackCritical ? 'critical' : ''}">${diceFace(b.attackDice)}</div>
+          <div class="bt-dice-num huge ${b.attackCritical ? 'critical' : ''}">${b.attackDice}</div>
           <div class="bt-dice-action">${variantLabel}</div>
         </div>
         <div class="bt-dice-vs">→</div>
         <div class="bt-dice-side defender">
-          <div class="bt-dice-label" style="color:${defColor};">${defName}</div>
-          <div class="bt-dice-face">${b.defenseDice !== null ? diceFace(b.defenseDice) : '?'}</div>
-          <div class="bt-dice-num huge">${b.defenseDice ?? '-'}</div>
+          <div class="bt-dice-label" style="color:${defColor};">${defName}${b.defenseCritical ? ' ★' : ''}</div>
+          <div class="bt-dice-face ${b.defenseCritical ? 'critical' : ''}">${b.defenseDice !== null ? diceFace(b.defenseDice) : '?'}</div>
+          <div class="bt-dice-num huge ${b.defenseCritical ? 'critical' : ''}">${b.defenseDice ?? '-'}</div>
           <div class="bt-dice-action">${b.defenseAction === 'defend' ? '🛡 방어' : b.defenseAction === 'dodge' ? '💨 회피' : '...'}</div>
         </div>
       </div>
@@ -8761,11 +8816,12 @@ function renderPvpBattle(modal, state) {
       `;
     } else {
       actionHTML = `
-        <div style="text-align:center;margin-top:14px;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;">
           <button class="bt-roll-btn" id="pvp-roll-preroll" ${state.submitting ? 'disabled' : ''}>
             <span class="bt-roll-dice">🎲</span>
             <span class="bt-roll-label">선턴 다이스 굴리기</span>
           </button>
+          <button class="bt-guide-btn" id="pvp-guide-btn" title="결투 가이드">?</button>
         </div>
       `;
     }
@@ -8834,15 +8890,26 @@ function renderPvpBattle(modal, state) {
       ${logHTML}
 
       <div class="bt-hp-row${opShake}">
-        <span class="bt-hp-label" style="color:#c97d5f;">${op?.name || '?'}</span>
+        <span class="bt-hp-label emoji-host" data-side="op" style="color:#c97d5f;">${op?.name || '?'}</span>
         <div class="bt-hp-bars">${opBarsHTML}</div>
         <span class="bt-hp-value">${op?.hp ?? '-'}/${b.maxHp}</span>
       </div>
       <div class="bt-hp-row${meShake}">
-        <span class="bt-hp-label" style="color:#03B352;">${me?.name || '?'}</span>
+        <span class="bt-hp-label emoji-host" data-side="me" style="color:#03B352;">${me?.name || '?'}</span>
         <div class="bt-hp-bars">${meBarsHTML}</div>
         <span class="bt-hp-value">${me?.hp ?? '-'}/${b.maxHp}</span>
       </div>
+
+      ${!done ? `
+        <div class="emoji-reaction-bar">
+          <span class="emoji-bar-label">반응:</span>
+          ${EMOJI_REACTIONS.map(r => `
+            <button class="emoji-react-btn" data-emoji="${r.id}" title="${r.label}">
+              <span class="emoji-react-face">${r.face}</span>
+            </button>
+          `).join('')}
+        </div>
+      ` : ''}
 
       ${diceHTML}
       ${actionHTML}
@@ -8887,18 +8954,19 @@ function attachPvpBattleHandlers(modal, state) {
     }
   });
 
+  document.getElementById('pvp-guide-btn')?.addEventListener('click', showBattleGuide);
+
   // 2) 공격 선택
   modal.querySelectorAll('[data-attack]').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (state.submitting) return;
       const variant = btn.dataset.attack;
-      let dice;
-      if (variant === 'quick') dice = Math.floor(Math.random() * 6) + 1 + 2;  // 3~8
-      else dice = rollD10();
+      const roll = rollAttackDice(variant);
       state.submitting = true;
       playSfx('blip');
+      if (roll.critical) showCriticalFlash('CRITICAL ATTACK!');
       try {
-        await Backend.submitPvpAttack(state.battleId, state.mySlot, dice, variant);
+        await Backend.submitPvpAttack(state.battleId, state.mySlot, roll.dice, variant, roll.critical);
       } catch (err) {
         console.error('[pvp] attack 실패:', err);
         showToast('⚠ 공격 등록 실패', 'warn');
@@ -8913,17 +8981,30 @@ function attachPvpBattleHandlers(modal, state) {
     btn.addEventListener('click', async () => {
       if (state.submitting) return;
       const action = btn.dataset.defaction;
-      const dice = rollD10();
+      const roll = rollD10WithCrit();
       state.submitting = true;
       playSfx('blip');
+      if (roll.critical) showCriticalFlash('CRITICAL DEFENSE!');
       try {
-        await Backend.submitPvpDefense(state.battleId, state.mySlot, dice, action);
+        await Backend.submitPvpDefense(state.battleId, state.mySlot, roll.dice, action, roll.critical);
       } catch (err) {
         console.error('[pvp] defense 실패:', err);
         showToast('⚠ 방어 등록 실패', 'warn');
       } finally {
         state.submitting = false;
       }
+    });
+  });
+
+  // 이모지 반응 버튼 (PvP) - 본인 라벨에 즉시 표시 + Firestore 동기화
+  modal.querySelectorAll('.emoji-react-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const emojiId = btn.dataset.emoji;
+      const myHost = modal.querySelector('.emoji-host[data-side="me"]');
+      if (myHost) showEmojiReaction(myHost, emojiId);
+      try {
+        await Backend.setPvpEmoji(state.battleId, state.mySlot, emojiId);
+      } catch (e) { /* 동기화 실패는 무시 */ }
     });
   });
 }
