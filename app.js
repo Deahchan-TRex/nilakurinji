@@ -816,9 +816,28 @@ async function handleAction(action, submenuItem = null) {
 
   const eff = CONFIG.ACTIONS[action];
   const actualEff = { ...eff, ...(submenuItem?.override || {}) };
-  const effTxt = Object.entries(actualEff)
-    .filter(([k]) => !['label','desc','exp'].includes(k))
-    .map(([k,v]) => `${k} ${v>0?'+':''}${v}`).join(' / ');
+  // 성격 라벨 (personality 객체 평탄화용)
+  const effectPersonaLabels = {
+    activeVsCalm:      ['차분', '활발'],
+    greedVsTemperance: ['절제', '탐욕'],
+    socialVsIntro:     ['내향', '사교'],
+    diligentVsFree:    ['자유', '성실'],
+  };
+  const parts = [];
+  for (const [k, v] of Object.entries(actualEff)) {
+    if (['label', 'desc', 'exp'].includes(k)) continue;
+    if (k === 'personality' && v && typeof v === 'object') {
+      // 성격 객체 평탄화
+      for (const [axis, d] of Object.entries(v)) {
+        if (d === 0 || !effectPersonaLabels[axis]) continue;
+        const label = d > 0 ? effectPersonaLabels[axis][1] : effectPersonaLabels[axis][0];
+        parts.push(`${label} ${d > 0 ? '+' : ''}${d}`);
+      }
+    } else if (typeof v === 'number') {
+      parts.push(`${k} ${v > 0 ? '+' : ''}${v}`);
+    }
+  }
+  const effTxt = parts.join(' / ');
 
   const actionLabel = submenuItem
     ? `${eff.label} · ${submenuItem.label}`
@@ -5753,6 +5772,34 @@ function showMinigameHub() {
             안개 속 미로에서 출구를 찾는다 · 보물과 함정
           </div>
         </button>
+
+        <button class="mg-option ${!unlocked ? 'mg-locked' : ''}" data-game="battle"
+          ${!unlocked ? 'disabled' : ''}
+          style="padding:14px;background:${unlocked?'#1a0a0e':'#050505'};
+          border:1px solid ${unlocked?'#c97d5f':'#333'};color:${unlocked?'#c97d5f':'#555'};
+          font-family:inherit;font-size:13px;cursor:${unlocked?'pointer':'not-allowed'};text-align:left;">
+          <div style="font-weight:bold;">
+            BATTLE · 다이스 결투 ⚔
+            ${!unlocked ? ' <span style="float:right;font-size:10px;">🔒 CHILD부터</span>' : ''}
+          </div>
+          <div style="font-size:11px;color:${unlocked?'#c9a06b':'#444'};margin-top:4px;">
+            MARS II와 1D10 다이스 결투 · 공격/방어/회피
+          </div>
+        </button>
+
+        <button class="mg-option ${!unlocked ? 'mg-locked' : ''}" data-game="pvp"
+          ${!unlocked ? 'disabled' : ''}
+          style="padding:14px;background:${unlocked?'#0e0a18':'#050505'};
+          border:1px solid ${unlocked?'#a87dc9':'#333'};color:${unlocked?'#a87dc9':'#555'};
+          font-family:inherit;font-size:13px;cursor:${unlocked?'pointer':'not-allowed'};text-align:left;">
+          <div style="font-weight:bold;">
+            PvP BATTLE · 크루 결투 ⚔⚔
+            ${!unlocked ? ' <span style="float:right;font-size:10px;">🔒 CHILD부터</span>' : ''}
+          </div>
+          <div style="font-size:11px;color:${unlocked?'#c9a8e0':'#444'};margin-top:4px;">
+            다른 크루와 실시간 결투 · 로비/도전장
+          </div>
+        </button>
       </div>
 
       <div style="margin-top:14px;font-size:10px;color:#666;text-align:center;">
@@ -5787,6 +5834,8 @@ function showMinigameHub() {
       else if (game === 'blackjack') showBlackjackGame();
       else if (game === 'tictactoe') showTicTacToeGame();
       else if (game === 'maze') showMazeGame();
+      else if (game === 'battle') showBattleGame();
+      else if (game === 'pvp') showPvpLobby();
     });
   });
 }
@@ -6987,35 +7036,35 @@ async function onMazeFinish(state) {
     if (speed > 0.5) {
       // 빠른 클리어
       reward = {
-        intel: +10, happy: +5, bond: +2,
+        intel: +5, happy: +5, bond: +2,
         personality: { diligentVsFree: +2, socialVsIntro: +1 },
       };
       label = '완벽';
     } else if (speed > 0) {
       reward = {
-        intel: +6, happy: +3,
+        intel: +3, happy: +3,
         personality: { diligentVsFree: +1 },
       };
       label = '클리어';
     } else {
       reward = {
-        intel: +4, happy: +1,
+        intel: +2, happy: +1,
         personality: { activeVsCalm: -2 },
       };
       label = '아슬';
     }
-    // 보물 보너스
-    reward.intel += state.collectedTreasures * 3;
+    // 보물 보너스 - 약화 (3 → 1)
+    reward.intel += state.collectedTreasures * 1;
     reward.happy = (reward.happy || 0) + state.collectedTreasures * 2;
-    // 함정 페널티 (강도/지능 일부 감소)
+    // 함정 페널티 (강도 일부 감소)
     if (state.triggeredTraps > 0) {
-      reward.strength = -state.triggeredTraps * 5;
+      reward.strength = -state.triggeredTraps * 2;
     }
   } else if (state.failed) {
     // 실패: happy 감소, 차분/자유 강화. 보물 일부 회수
     reward = {
       happy: -5,
-      intel: state.collectedTreasures * 2,  // 보물 정보 회수
+      intel: state.collectedTreasures * 1,  // 보물 정보 회수
       personality: { activeVsCalm: -3, diligentVsFree: -2 },
     };
     label = '실패';
@@ -7073,6 +7122,807 @@ async function onMazeFinish(state) {
     : `너무 어두워. 길을 잃었어.`;
   saveBroadcastSpeech(currentPet, {
     text: speech, at: Date.now(), to: '__sys__',
+  });
+}
+
+
+// ════════════════════════════════════════════════════════════
+// BATTLE - MARS II와의 다이스 결투 (PvE)
+// ════════════════════════════════════════════════════════════
+
+const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅', '⚀', '⚁', '⚂', '⚃'];  // 1-10 (6면체 반복)
+
+function rollD10() {
+  return Math.floor(Math.random() * 10) + 1;
+}
+function diceFace(n) {
+  // 1~10 모두 표시 가능 (6면체 + 7~10은 숫자만)
+  if (n >= 1 && n <= 6) return ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'][n - 1];
+  return n.toString();
+}
+
+/**
+ * MARS II AI - HP 비율 따라 행동 결정
+ */
+function pickMarsAction(marsHp, maxHp) {
+  const cfg = CONFIG.MINIGAME_CONFIG.BATTLE.AI_BEHAVIOR;
+  const ratio = marsHp / maxHp;
+  let dist;
+  if (ratio > 0.75) dist = cfg.HIGH;
+  else if (ratio > 0.5) dist = cfg.MID;
+  else if (ratio > 0.25) dist = cfg.LOW;
+  else dist = cfg.CRIT;
+
+  const r = Math.random();
+  if (r < dist.attack) return 'attack';
+  if (r < dist.attack + dist.defend) return 'defend';
+  return 'dodge';
+}
+
+function showBattleGame() {
+  if (!currentPet || currentPet.isDead) return;
+  const existing = document.getElementById('minigame-modal');
+  if (existing) { existing.remove(); return; }
+
+  const cfg = CONFIG.MINIGAME_CONFIG.BATTLE;
+  const state = {
+    maxHp: cfg.MAX_HP,
+    crewHp: cfg.MAX_HP,
+    marsHp: cfg.MAX_HP,
+    round: 1,
+    phase: 'choose',  // 'choose' | 'resolve' | 'done'
+    crewAction: null,
+    marsAction: null,
+    crewDice: null,
+    marsDice: null,
+    log: [],          // 최근 이벤트 텍스트들 (4개까지)
+    result: null,     // 'win' | 'lose'
+    rewardText: '',
+    animating: false,
+  };
+
+  const modal = document.createElement('div');
+  modal.id = 'minigame-modal';
+  modal.className = 'maze-popup';  // 라디오/미로와 동일한 팝업 스타일
+  renderBattle(modal, state);
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+  attachBattleHandlers(modal, state);
+}
+
+function renderBattle(modal, state) {
+  const isTest = isMinigameTestMode();
+  const done = state.phase === 'done';
+
+  // 결과 영역
+  let resultHTML = '';
+  if (done) {
+    if (state.result === 'win') {
+      resultHTML = `
+        <div class="maze-terminal-line good">&gt; ◆ 승리! ${state.round - 1}라운드 만에 제압.</div>
+        <div class="maze-terminal-line dim">&gt; 보상: ${state.rewardText}</div>
+      `;
+    } else {
+      resultHTML = `
+        <div class="maze-terminal-line warn">&gt; ✕ 패배. MARS II에게 졌다.</div>
+        <div class="maze-terminal-line dim">&gt; ${state.rewardText}</div>
+      `;
+    }
+  } else {
+    resultHTML = `
+      <div class="maze-terminal-line">&gt; ROUND ${state.round} · 너의 차례</div>
+      <div class="maze-terminal-line dim">&gt; 1D10 다이스로 결판. 공격/방어/회피 선택.</div>
+    `;
+  }
+
+  // 최근 이벤트 로그 (3-4개)
+  const logHTML = state.log.slice(-4).map(line => `
+    <div class="maze-terminal-line ${line.cls || 'dim'}">&gt; ${line.text}</div>
+  `).join('');
+
+  // HP 바
+  const crewBars = Math.ceil((state.crewHp / state.maxHp) * 12);
+  const marsBars = Math.ceil((state.marsHp / state.maxHp) * 12);
+  const crewBarsHTML = Array.from({length: 12}, (_, i) =>
+    `<span class="bt-hp-bar ${i < crewBars ? 'on crew' : ''}"></span>`).join('');
+  const marsBarsHTML = Array.from({length: 12}, (_, i) =>
+    `<span class="bt-hp-bar ${i < marsBars ? 'on mars' : ''}"></span>`).join('');
+
+  // 다이스 영역 (resolve 페이즈 또는 직전 행동 표시)
+  let diceHTML = '';
+  if (state.crewDice !== null || state.marsDice !== null) {
+    diceHTML = `
+      <div class="bt-dice-row">
+        <div class="bt-dice-side">
+          <div class="bt-dice-label">${currentUser.name}</div>
+          <div class="bt-dice-face">${state.crewDice !== null ? diceFace(state.crewDice) : '·'}</div>
+          <div class="bt-dice-num">${state.crewDice !== null ? state.crewDice : '-'}</div>
+          <div class="bt-dice-action">${actionLabel(state.crewAction)}</div>
+        </div>
+        <div class="bt-dice-vs">VS</div>
+        <div class="bt-dice-side">
+          <div class="bt-dice-label" style="color:#c97d5f;">MARS II</div>
+          <div class="bt-dice-face">${state.marsDice !== null ? diceFace(state.marsDice) : '·'}</div>
+          <div class="bt-dice-num">${state.marsDice !== null ? state.marsDice : '-'}</div>
+          <div class="bt-dice-action">${actionLabel(state.marsAction)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  modal.innerHTML = `
+    <div class="maze-popup-head">
+      <span>&gt; BATTLE.EXE · ROUND ${state.round} ${isTest ? '· <span style="color:#e8a853;">[TEST]</span>' : ''}</span>
+      <span class="maze-close" id="bt-close" title="닫기">─ _ ✕</span>
+    </div>
+    <div class="maze-popup-body">
+      ${resultHTML}
+      ${logHTML}
+
+      <!-- HP 바 -->
+      <div class="bt-hp-row">
+        <span class="bt-hp-label" style="color:#c97d5f;">MARS II</span>
+        <div class="bt-hp-bars">${marsBarsHTML}</div>
+        <span class="bt-hp-value">${state.marsHp}/${state.maxHp}</span>
+      </div>
+      <div class="bt-hp-row">
+        <span class="bt-hp-label" style="color:#03B352;">${currentUser.name}</span>
+        <div class="bt-hp-bars">${crewBarsHTML}</div>
+        <span class="bt-hp-value">${state.crewHp}/${state.maxHp}</span>
+      </div>
+
+      ${diceHTML}
+
+      ${!done ? `
+        <div class="bt-actions">
+          <button class="bt-action-btn attack" data-action="attack" ${state.animating ? 'disabled' : ''}>
+            <div class="bt-action-icon">⚔</div>
+            <div class="bt-action-label">공격</div>
+            <div class="bt-action-desc">다이스값 = 데미지</div>
+          </button>
+          <button class="bt-action-btn defend" data-action="defend" ${state.animating ? 'disabled' : ''}>
+            <div class="bt-action-icon">🛡</div>
+            <div class="bt-action-label">방어</div>
+            <div class="bt-action-desc">데미지 차감</div>
+          </button>
+          <button class="bt-action-btn dodge" data-action="dodge" ${state.animating ? 'disabled' : ''}>
+            <div class="bt-action-icon">💨</div>
+            <div class="bt-action-label">회피</div>
+            <div class="bt-action-desc">8+ 완전회피</div>
+          </button>
+        </div>
+      ` : `
+        <div class="maze-actions">
+          <button id="bt-again" class="maze-btn-action">다시 도전</button>
+          <button id="bt-back" class="maze-btn-action secondary">메뉴로</button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function actionLabel(action) {
+  if (action === 'attack') return '⚔ 공격';
+  if (action === 'defend') return '🛡 방어';
+  if (action === 'dodge') return '💨 회피';
+  return '·';
+}
+
+function attachBattleHandlers(modal, state) {
+  document.getElementById('bt-close')?.addEventListener('click', () => modal.remove());
+
+  modal.querySelectorAll('.bt-action-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (state.animating || state.phase !== 'choose') return;
+      const action = btn.dataset.action;
+      handleBattleTurn(modal, state, action);
+    });
+  });
+
+  document.getElementById('bt-again')?.addEventListener('click', () => {
+    modal.remove();
+    setTimeout(showBattleGame, 100);
+  });
+  document.getElementById('bt-back')?.addEventListener('click', () => {
+    modal.remove();
+    showMinigameHub();
+  });
+}
+
+async function handleBattleTurn(modal, state, crewAction) {
+  state.animating = true;
+  state.crewAction = crewAction;
+  state.marsAction = pickMarsAction(state.marsHp, state.maxHp);
+
+  // 다이스 굴림
+  state.crewDice = rollD10();
+  state.marsDice = rollD10();
+
+  // 사운드
+  playSfx('blip');
+
+  // 1차 렌더 (다이스만 보여줌)
+  renderBattle(modal, state);
+  attachBattleHandlers(modal, state);
+
+  await new Promise(r => setTimeout(r, 900));
+
+  // 데미지 계산
+  resolveBattleRound(state);
+
+  // 결과 렌더
+  state.crewDice = null;
+  state.marsDice = null;
+  state.crewAction = null;
+  state.marsAction = null;
+
+  // 종료 체크
+  if (state.crewHp <= 0 && state.marsHp <= 0) {
+    // 동시 사망: 데미지 비교
+    state.result = (state.marsHp < state.crewHp) ? 'win' : 'lose';
+    state.phase = 'done';
+    await onBattleFinish(state);
+  } else if (state.marsHp <= 0) {
+    state.result = 'win';
+    state.phase = 'done';
+    await onBattleFinish(state);
+  } else if (state.crewHp <= 0) {
+    state.result = 'lose';
+    state.phase = 'done';
+    await onBattleFinish(state);
+  } else {
+    state.round += 1;
+    state.phase = 'choose';
+  }
+
+  state.animating = false;
+  renderBattle(modal, state);
+  attachBattleHandlers(modal, state);
+}
+
+/**
+ * 한 라운드 데미지 해소
+ * 양측 행동 + 다이스를 보고 HP 변동 처리, log 추가
+ */
+function resolveBattleRound(state) {
+  const cfg = CONFIG.MINIGAME_CONFIG.BATTLE;
+  const cAct = state.crewAction;
+  const mAct = state.marsAction;
+  const cDice = state.crewDice;
+  const mDice = state.marsDice;
+
+  // 둘 다 공격이면 양쪽 데미지
+  // 한쪽이 방어면 데미지 - 방어값 (음수면 0)
+  // 한쪽이 회피면 다이스 8+ → 완전회피, 7- → 전체 피해
+
+  // 크루의 행동에 따라 MARS II가 받는 데미지
+  let damageToMars = 0;
+  let damageToCrew = 0;
+  const events = [];
+
+  // ── 1) 크루 행동 → MARS II 영향 ──
+  if (cAct === 'attack') {
+    if (mAct === 'defend') {
+      const blocked = Math.min(cDice, mDice);
+      damageToMars = Math.max(0, cDice - mDice);
+      if (damageToMars === 0) {
+        events.push({ text: `${currentUser.name}: 공격 ${cDice} → MARS II 방어 ${mDice}, 완전 차단!`, cls: 'dim' });
+      } else {
+        events.push({ text: `${currentUser.name}: 공격 ${cDice} → 방어 ${mDice} 뚫고 ${damageToMars} 피해`, cls: 'good' });
+      }
+    } else if (mAct === 'dodge') {
+      if (mDice >= cfg.DODGE_THRESHOLD) {
+        damageToMars = 0;
+        events.push({ text: `MARS II: 회피 ${mDice} (${cfg.DODGE_THRESHOLD}+) → 완전 회피!`, cls: 'warn' });
+      } else {
+        damageToMars = cDice;
+        events.push({ text: `MARS II: 회피 실패 ${mDice} → 공격 ${cDice} 그대로 맞음!`, cls: 'good' });
+      }
+    } else {
+      // MARS II도 공격
+      damageToMars = cDice;
+      events.push({ text: `${currentUser.name}: 공격 ${cDice} → MARS II ${cDice} 피해`, cls: 'good' });
+    }
+  }
+
+  // ── 2) MARS II 행동 → 크루 영향 ──
+  if (mAct === 'attack') {
+    if (cAct === 'defend') {
+      damageToCrew = Math.max(0, mDice - cDice);
+      if (damageToCrew === 0) {
+        events.push({ text: `MARS II: 공격 ${mDice} → 너의 방어 ${cDice}, 완전 차단!`, cls: 'good' });
+      } else {
+        events.push({ text: `MARS II: 공격 ${mDice} → 방어 ${cDice} 뚫고 ${damageToCrew} 피해`, cls: 'warn' });
+      }
+    } else if (cAct === 'dodge') {
+      if (cDice >= cfg.DODGE_THRESHOLD) {
+        damageToCrew = 0;
+        events.push({ text: `${currentUser.name}: 회피 ${cDice} (${cfg.DODGE_THRESHOLD}+) → 완전 회피!`, cls: 'good' });
+      } else {
+        damageToCrew = mDice;
+        events.push({ text: `${currentUser.name}: 회피 실패 ${cDice} → 공격 ${mDice} 그대로!`, cls: 'warn' });
+      }
+    } else {
+      damageToCrew = mDice;
+      events.push({ text: `MARS II: 공격 ${mDice} → 너 ${mDice} 피해`, cls: 'warn' });
+    }
+  }
+
+  // 양쪽 모두 비공격(방어/회피)이면 정적
+  if (cAct !== 'attack' && mAct !== 'attack') {
+    events.push({ text: `둘 다 서로를 살핀다... 아무 일도 일어나지 않음.`, cls: 'dim' });
+  }
+
+  state.crewHp = Math.max(0, state.crewHp - damageToCrew);
+  state.marsHp = Math.max(0, state.marsHp - damageToMars);
+
+  // 사운드
+  if (damageToMars > 0 || damageToCrew > 0) {
+    playSfx(damageToMars > damageToCrew ? 'happy' : 'angry');
+  }
+
+  // log에 추가
+  for (const ev of events) state.log.push(ev);
+}
+
+async function onBattleFinish(state) {
+  const cfg = CONFIG.MINIGAME_CONFIG.BATTLE;
+  let reward, label;
+
+  if (state.result === 'win') {
+    if (state.round <= 3) {
+      reward = cfg.REWARDS.win_fast;
+      label = '빠른 승리';
+    } else if (state.round >= 7 && state.crewHp <= 5) {
+      reward = cfg.REWARDS.win_slow;
+      label = '아슬한 승리';
+    } else {
+      reward = cfg.REWARDS.win;
+      label = '승리';
+    }
+  } else {
+    reward = cfg.REWARDS.lose;
+    label = '패배';
+  }
+
+  // 보상 텍스트
+  const parts = [];
+  for (const [k, v] of Object.entries(reward)) {
+    if (k === 'personality' || v === 0) continue;
+    parts.push(`${k.toUpperCase()} ${v > 0 ? '+' : ''}${v}`);
+  }
+  if (reward.personality) {
+    const labels = {
+      activeVsCalm: ['차분', '활발'],
+      greedVsTemperance: ['절제', '탐욕'],
+      socialVsIntro: ['내향', '사교'],
+      diligentVsFree: ['자유', '성실'],
+    };
+    for (const [axis, d] of Object.entries(reward.personality)) {
+      const lab = labels[axis];
+      if (!lab) continue;
+      parts.push(`${d > 0 ? lab[1] : lab[0]} ${d > 0 ? '+' : ''}${d}`);
+    }
+  }
+  state.rewardText = parts.join(' · ') || '변화 없음';
+
+  // 테스트 모드: 저장 안 함
+  if (isMinigameTestMode()) {
+    state.rewardText = '(테스트 모드 · 저장 안 됨) ' + state.rewardText;
+    return;
+  }
+
+  // 실제 적용
+  for (const [k, v] of Object.entries(reward)) {
+    if (k === 'personality') continue;
+    if (currentPet[k] !== undefined) {
+      currentPet[k] = Math.max(0, Math.min(100, (currentPet[k] || 0) + v));
+    }
+  }
+  if (reward.personality) {
+    currentPet.personality = currentPet.personality || {};
+    for (const [axis, d] of Object.entries(reward.personality)) {
+      currentPet.personality[axis] = Math.max(-100, Math.min(100,
+        (currentPet.personality[axis] || 0) + d));
+    }
+  }
+
+  await incrementMinigameCount();
+  await Backend.savePet(currentPet);
+  await Backend.addLog({
+    user: currentUser.name, action: 'BATTLE',
+    text: `${label} (${state.round}R) → ${state.rewardText}`,
+    type: state.result === 'win' ? 'epic' : 'warn',
+  });
+
+  // 캐릭터 대사
+  const speeches = {
+    'win': [
+      '...졌다. 다음엔 안 져.',
+      '강하네. 인정.',
+      '으, 손이 저려.',
+    ],
+    'lose': [
+      '후훗, 봤지? 내가 더 강해.',
+      '미안, 봐주지 못해서.',
+      '연습이 더 필요한 것 같아.',
+    ],
+  };
+  const pool = speeches[state.result] || [];
+  if (pool.length > 0) {
+    const speech = pool[Math.floor(Math.random() * pool.length)];
+    saveBroadcastSpeech(currentPet, {
+      text: speech, at: Date.now(), to: '__sys__',
+    });
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════
+// PvP BATTLE - 크루 vs 크루 (로비 + 매칭)
+// ════════════════════════════════════════════════════════════
+
+let pvpBattleId = null;       // 현재 참여 중인 battle ID
+let pvpUnsubscribe = null;    // onSnapshot 구독 해제 함수
+let pvpRefreshTimer = null;   // 로비 자동 새로고침
+
+/**
+ * 로비 진입 - 대기 중인 도전장 목록 + 새 도전장 만들기
+ */
+async function showPvpLobby() {
+  if (!currentPet || currentPet.isDead) return;
+  const existing = document.getElementById('minigame-modal');
+  if (existing) { existing.remove(); }
+
+  // 기존 구독 해제
+  if (pvpUnsubscribe) { pvpUnsubscribe(); pvpUnsubscribe = null; }
+  if (pvpRefreshTimer) { clearInterval(pvpRefreshTimer); pvpRefreshTimer = null; }
+  pvpBattleId = null;
+
+  const modal = document.createElement('div');
+  modal.id = 'minigame-modal';
+  modal.className = 'maze-popup';
+  modal.innerHTML = `
+    <div class="maze-popup-head">
+      <span>&gt; PVP_LOBBY.EXE · 크루 결투</span>
+      <span class="maze-close" id="pvp-close">─ _ ✕</span>
+    </div>
+    <div class="maze-popup-body">
+      <div class="maze-terminal-line">&gt; 다른 크루와 1D10 다이스로 결투.</div>
+      <div class="maze-terminal-line dim">&gt; 양쪽 동시에 [공격/방어/회피] 선택. HP 50.</div>
+
+      <div style="margin:14px 0;">
+        <button id="pvp-create" class="maze-btn-action" style="width:100%;">
+          ⚔ 새 도전장 만들기 (대기)
+        </button>
+      </div>
+
+      <div class="maze-terminal-line dim">&gt; 대기 중인 도전장:</div>
+      <div id="pvp-lobby-list" style="margin-top:8px;">
+        <div class="maze-terminal-line dim">&gt; 불러오는 중...</div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <button id="pvp-refresh" class="maze-btn-action secondary" style="width:100%;font-size:11px;">
+          ↻ 목록 새로고침
+        </button>
+      </div>
+    </div>
+  `;
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  document.getElementById('pvp-close').addEventListener('click', () => {
+    if (pvpRefreshTimer) clearInterval(pvpRefreshTimer);
+    modal.remove();
+  });
+  document.getElementById('pvp-create').addEventListener('click', () => createPvpChallenge(modal));
+  document.getElementById('pvp-refresh').addEventListener('click', () => refreshPvpLobby());
+
+  // 첫 로드 + 5초마다 자동 새로고침
+  await refreshPvpLobby();
+  pvpRefreshTimer = setInterval(refreshPvpLobby, 5000);
+}
+
+async function refreshPvpLobby() {
+  const list = document.getElementById('pvp-lobby-list');
+  if (!list) return;
+  try {
+    const battles = await Backend.listWaitingBattles();
+    if (battles.length === 0) {
+      list.innerHTML = `<div class="maze-terminal-line dim">&gt; 대기 중인 도전장 없음</div>`;
+      return;
+    }
+    list.innerHTML = battles.map(b => {
+      const isMine = b.players.p1.name === currentUser.name;
+      const ageMin = Math.floor((Date.now() - b.createdAt) / 60000);
+      return `
+        <div class="pvp-lobby-item" data-id="${b.id}" data-mine="${isMine}">
+          <div class="pvp-lobby-info">
+            <span class="pvp-lobby-host">${b.players.p1.name}</span>
+            <span class="pvp-lobby-age">${ageMin}분 전</span>
+          </div>
+          <div class="pvp-lobby-actions">
+            ${isMine
+              ? `<button class="pvp-cancel-btn" data-id="${b.id}">취소</button>`
+              : `<button class="pvp-join-btn" data-id="${b.id}">⚔ 도전</button>`}
+          </div>
+        </div>
+      `;
+    }).join('');
+    // 핸들러
+    list.querySelectorAll('.pvp-join-btn').forEach(btn => {
+      btn.addEventListener('click', () => joinPvpChallenge(btn.dataset.id));
+    });
+    list.querySelectorAll('.pvp-cancel-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await Backend.cancelBattle(btn.dataset.id);
+        refreshPvpLobby();
+      });
+    });
+  } catch (err) {
+    console.error('[pvp] 로비 로드 실패:', err);
+    list.innerHTML = `<div class="maze-terminal-line warn">&gt; 로비 로드 실패: ${err.message}</div>`;
+  }
+}
+
+async function createPvpChallenge(lobbyModal) {
+  const cfg = CONFIG.MINIGAME_CONFIG.BATTLE;
+  try {
+    const battleId = await Backend.createBattle(currentUser.name, cfg.MAX_HP);
+    pvpBattleId = battleId;
+    if (pvpRefreshTimer) { clearInterval(pvpRefreshTimer); pvpRefreshTimer = null; }
+    lobbyModal.remove();
+    showPvpWaitingRoom(battleId);
+  } catch (err) {
+    console.error('[pvp] 도전장 생성 실패:', err);
+    showToast(`⚠ 도전장 생성 실패: ${err.message}`, 'warn');
+  }
+}
+
+async function joinPvpChallenge(battleId) {
+  const cfg = CONFIG.MINIGAME_CONFIG.BATTLE;
+  try {
+    await Backend.joinBattle(battleId, currentUser.name, cfg.MAX_HP);
+    pvpBattleId = battleId;
+    if (pvpRefreshTimer) { clearInterval(pvpRefreshTimer); pvpRefreshTimer = null; }
+    const modal = document.getElementById('minigame-modal');
+    if (modal) modal.remove();
+    showPvpBattle(battleId);
+  } catch (err) {
+    console.error('[pvp] 입장 실패:', err);
+    showToast(`⚠ 입장 실패: ${err.message}`, 'warn');
+    refreshPvpLobby();
+  }
+}
+
+/**
+ * 도전장 대기 화면 (호스트만)
+ */
+function showPvpWaitingRoom(battleId) {
+  const existing = document.getElementById('minigame-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'minigame-modal';
+  modal.className = 'maze-popup';
+  modal.innerHTML = `
+    <div class="maze-popup-head">
+      <span>&gt; PVP_WAIT.EXE · 도전 대기 중</span>
+      <span class="maze-close" id="pvpw-close">─ _ ✕</span>
+    </div>
+    <div class="maze-popup-body">
+      <div class="maze-terminal-line good">&gt; 도전장 발행됨.</div>
+      <div class="maze-terminal-line dim">&gt; 다른 크루의 입장을 대기 중...</div>
+      <div class="maze-terminal-line dim">&gt; 30분 내 입장 없으면 자동 만료.</div>
+
+      <div style="text-align:center;margin:24px 0;">
+        <div class="pvp-spinner">⚔</div>
+        <div style="margin-top:14px;color:#5fb37a;font-size:11px;">
+          ${currentUser.name} (대기 중...)
+        </div>
+      </div>
+
+      <div class="maze-actions">
+        <button id="pvpw-cancel" class="maze-btn-action secondary">도전장 취소</button>
+      </div>
+    </div>
+  `;
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+
+  // 도전장 구독 - 누군가 입장하면 자동으로 대결 화면으로
+  pvpUnsubscribe = Backend.onBattleChange(battleId, (b) => {
+    if (b.status === 'active' && b.players.p2) {
+      // 게스트 입장됨 → 대결 시작
+      modal.remove();
+      showPvpBattle(battleId);
+    }
+  });
+
+  // 취소 + 닫기
+  const cancelHandler = async () => {
+    if (pvpUnsubscribe) { pvpUnsubscribe(); pvpUnsubscribe = null; }
+    await Backend.cancelBattle(battleId);
+    pvpBattleId = null;
+    modal.remove();
+    showPvpLobby();  // 로비로 복귀
+  };
+  document.getElementById('pvpw-close').addEventListener('click', cancelHandler);
+  document.getElementById('pvpw-cancel').addEventListener('click', cancelHandler);
+}
+
+/**
+ * PvP 대결 화면 (양쪽 동기화)
+ */
+function showPvpBattle(battleId) {
+  const existing = document.getElementById('minigame-modal');
+  if (existing) existing.remove();
+
+  // 이전 구독 해제
+  if (pvpUnsubscribe) { pvpUnsubscribe(); pvpUnsubscribe = null; }
+
+  const modal = document.createElement('div');
+  modal.id = 'minigame-modal';
+  modal.className = 'maze-popup';
+
+  // 로컬 상태
+  const state = {
+    battleId,
+    battle: null,
+    submitting: false,
+    mySlot: null,  // 'p1' or 'p2'
+  };
+
+  // Firestore 구독
+  pvpUnsubscribe = Backend.onBattleChange(battleId, (b) => {
+    state.battle = b;
+    // 슬롯 결정
+    if (b.players.p1?.name === currentUser.name) state.mySlot = 'p1';
+    else if (b.players.p2?.name === currentUser.name) state.mySlot = 'p2';
+    renderPvpBattle(modal, state);
+    attachPvpBattleHandlers(modal, state);
+  });
+
+  const wrapper = document.getElementById('speech-wrapper');
+  if (wrapper && wrapper.parentNode) {
+    wrapper.parentNode.insertBefore(modal, wrapper);
+  }
+}
+
+function renderPvpBattle(modal, state) {
+  const b = state.battle;
+  if (!b) {
+    modal.innerHTML = `<div class="maze-popup-body"><div class="maze-terminal-line dim">&gt; 로딩 중...</div></div>`;
+    return;
+  }
+  const me = b.players[state.mySlot];
+  const opSlot = state.mySlot === 'p1' ? 'p2' : 'p1';
+  const op = b.players[opSlot];
+
+  const done = b.status === 'done';
+  let resultHTML = '';
+  if (done) {
+    let label, color;
+    if (b.winner === 'draw') { label = '◇ 무승부'; color = '#8fb39a'; }
+    else if (b.winner === state.mySlot) { label = '◆ 승리!'; color = '#03B352'; }
+    else { label = '✕ 패배'; color = '#c97d5f'; }
+    resultHTML = `
+      <div class="maze-terminal-line good" style="color:${color};font-weight:bold;">&gt; ${label} (${b.round}R)</div>
+      <div class="maze-terminal-line dim">&gt; PvP는 스탯 변화 없음 · 명예의 결투</div>
+    `;
+  } else {
+    resultHTML = `
+      <div class="maze-terminal-line">&gt; ROUND ${b.round} · ${me?.ready ? '상대 대기 중...' : '너의 차례'}</div>
+      <div class="maze-terminal-line dim">&gt; ${op?.name || '?'} ${op?.ready ? '✓ 선택 완료' : '... 고민 중'}</div>
+    `;
+  }
+
+  // 최근 로그 4줄
+  const logHTML = (b.log || []).slice(-4).map(line =>
+    `<div class="maze-terminal-line dim">&gt; ${line.text}</div>`).join('');
+
+  // HP 바
+  const meBars = me ? Math.ceil((me.hp / b.maxHp) * 12) : 0;
+  const opBars = op ? Math.ceil((op.hp / b.maxHp) * 12) : 0;
+  const meBarsHTML = Array.from({length: 12}, (_, i) =>
+    `<span class="bt-hp-bar ${i < meBars ? 'on crew' : ''}"></span>`).join('');
+  const opBarsHTML = Array.from({length: 12}, (_, i) =>
+    `<span class="bt-hp-bar ${i < opBars ? 'on mars' : ''}"></span>`).join('');
+
+  modal.innerHTML = `
+    <div class="maze-popup-head">
+      <span>&gt; PVP.EXE · ROUND ${b.round}</span>
+      <span class="maze-close" id="pvp-bt-close">─ _ ✕</span>
+    </div>
+    <div class="maze-popup-body">
+      ${resultHTML}
+      ${logHTML}
+
+      <div class="bt-hp-row">
+        <span class="bt-hp-label" style="color:#c97d5f;">${op?.name || '?'}</span>
+        <div class="bt-hp-bars">${opBarsHTML}</div>
+        <span class="bt-hp-value">${op?.hp ?? '-'}/${b.maxHp}</span>
+      </div>
+      <div class="bt-hp-row">
+        <span class="bt-hp-label" style="color:#03B352;">${me?.name || '?'}</span>
+        <div class="bt-hp-bars">${meBarsHTML}</div>
+        <span class="bt-hp-value">${me?.hp ?? '-'}/${b.maxHp}</span>
+      </div>
+
+      ${!done ? `
+        ${me?.ready ? `
+          <div style="text-align:center;padding:16px;color:#5fb37a;font-size:12px;">
+            ✓ 선택 완료 · ${op?.ready ? '결과 처리 중...' : '상대 대기...'}
+          </div>
+        ` : `
+          <div class="bt-actions">
+            <button class="bt-action-btn attack" data-action="attack" ${state.submitting ? 'disabled' : ''}>
+              <div class="bt-action-icon">⚔</div>
+              <div class="bt-action-label">공격</div>
+              <div class="bt-action-desc">다이스값 = 데미지</div>
+            </button>
+            <button class="bt-action-btn defend" data-action="defend" ${state.submitting ? 'disabled' : ''}>
+              <div class="bt-action-icon">🛡</div>
+              <div class="bt-action-label">방어</div>
+              <div class="bt-action-desc">데미지 차감</div>
+            </button>
+            <button class="bt-action-btn dodge" data-action="dodge" ${state.submitting ? 'disabled' : ''}>
+              <div class="bt-action-icon">💨</div>
+              <div class="bt-action-label">회피</div>
+              <div class="bt-action-desc">8+ 완전회피</div>
+            </button>
+          </div>
+        `}
+      ` : `
+        <div class="maze-actions">
+          <button id="pvp-bt-back" class="maze-btn-action">로비로</button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function attachPvpBattleHandlers(modal, state) {
+  document.getElementById('pvp-bt-close')?.addEventListener('click', () => {
+    if (pvpUnsubscribe) { pvpUnsubscribe(); pvpUnsubscribe = null; }
+    pvpBattleId = null;
+    modal.remove();
+  });
+  document.getElementById('pvp-bt-back')?.addEventListener('click', () => {
+    if (pvpUnsubscribe) { pvpUnsubscribe(); pvpUnsubscribe = null; }
+    pvpBattleId = null;
+    modal.remove();
+    showPvpLobby();
+  });
+
+  modal.querySelectorAll('.bt-action-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (state.submitting) return;
+      if (state.battle?.status !== 'active') return;
+      const me = state.battle.players[state.mySlot];
+      if (me?.ready) return;
+
+      state.submitting = true;
+      const action = btn.dataset.action;
+      const dice = rollD10();
+      playSfx('blip');
+      try {
+        await Backend.submitBattleAction(state.battleId, state.mySlot, action, dice);
+      } catch (err) {
+        console.error('[pvp] 행동 등록 실패:', err);
+        showToast('⚠ 등록 실패', 'warn');
+      } finally {
+        state.submitting = false;
+      }
+    });
   });
 }
 

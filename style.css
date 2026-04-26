@@ -1791,3 +1791,254 @@ body {
     font-size: 22px;
   }
 }
+
+/* ──────────────────────────────────────
+   BATTLE - 다이스 결투
+   ────────────────────────────────────── */
+
+/* HP 바 */
+.bt-hp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 6px 10px;
+  background: #0a1410;
+  border: 1px dotted #2d5a3e;
+}
+.bt-hp-label {
+  font-size: 10px;
+  letter-spacing: 1px;
+  min-width: 70px;
+  font-weight: bold;
+}
+.bt-hp-bars {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+}
+.bt-hp-bar {
+  flex: 1;
+  height: 12px;
+  background: #1a3d28;
+  transition: background 0.2s;
+}
+.bt-hp-bar.on.crew {
+  background: #03B352;
+  box-shadow: 0 0 3px #03B352;
+}
+.bt-hp-bar.on.mars {
+  background: #c97d5f;
+  box-shadow: 0 0 3px #c97d5f;
+}
+.bt-hp-value {
+  font-size: 10px;
+  font-family: monospace;
+  color: #c9c9c9;
+  min-width: 60px;
+  text-align: right;
+}
+
+/* 다이스 영역 */
+.bt-dice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  gap: 10px;
+  margin: 14px 0;
+  padding: 14px 8px;
+  background: #050a07;
+  border: 1px solid #2d5a3e;
+}
+.bt-dice-side {
+  flex: 1;
+  text-align: center;
+}
+.bt-dice-label {
+  font-size: 10px;
+  color: #03B352;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+.bt-dice-face {
+  font-size: 38px;
+  line-height: 1.1;
+  color: #c9c9c9;
+  font-weight: bold;
+  text-shadow: 0 0 8px rgba(255,255,255,0.2);
+  animation: btDiceShake 0.4s ease-out;
+}
+@keyframes btDiceShake {
+  0%   { transform: translateX(0) rotate(0deg); }
+  25%  { transform: translateX(-3px) rotate(-8deg); }
+  50%  { transform: translateX(3px) rotate(8deg); }
+  75%  { transform: translateX(-2px) rotate(-4deg); }
+  100% { transform: translateX(0) rotate(0deg); }
+}
+.bt-dice-num {
+  font-size: 14px;
+  color: #e8a853;
+  font-weight: bold;
+  font-family: monospace;
+  margin-top: 2px;
+}
+.bt-dice-action {
+  font-size: 10px;
+  color: #8fb39a;
+  margin-top: 4px;
+  letter-spacing: 1px;
+}
+.bt-dice-vs {
+  font-size: 12px;
+  color: #5fb37a;
+  font-weight: bold;
+  letter-spacing: 2px;
+  padding: 0 4px;
+}
+
+/* 액션 버튼 */
+.bt-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  margin-top: 14px;
+}
+.bt-action-btn {
+  padding: 12px 4px;
+  background: #0a1410;
+  border: 1px solid #5fb37a;
+  color: #5fb37a;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+  user-select: none;
+}
+.bt-action-btn:hover:not(:disabled) {
+  background: #0f2018;
+  color: #03B352;
+  box-shadow: 0 0 6px rgba(3, 179, 82, 0.3);
+}
+.bt-action-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+.bt-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.bt-action-btn.attack {
+  border-color: #c97d5f;
+  color: #c97d5f;
+}
+.bt-action-btn.attack:hover:not(:disabled) {
+  background: #1a0a0a;
+  color: #e8956f;
+  box-shadow: 0 0 6px rgba(201, 125, 95, 0.3);
+}
+.bt-action-btn.defend {
+  border-color: #7d9cb3;
+  color: #7d9cb3;
+}
+.bt-action-btn.defend:hover:not(:disabled) {
+  background: #0a1018;
+  color: #9ab3c9;
+  box-shadow: 0 0 6px rgba(125, 156, 179, 0.3);
+}
+.bt-action-btn.dodge {
+  border-color: #e8a853;
+  color: #e8a853;
+}
+.bt-action-btn.dodge:hover:not(:disabled) {
+  background: #1a1505;
+  color: #f0c074;
+  box-shadow: 0 0 6px rgba(232, 168, 83, 0.3);
+}
+.bt-action-icon {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+.bt-action-label {
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+.bt-action-desc {
+  font-size: 9px;
+  margin-top: 4px;
+  opacity: 0.7;
+}
+
+/* 모바일 */
+@media (max-width: 480px) {
+  .bt-dice-face { font-size: 32px; }
+  .bt-action-btn { padding: 10px 2px; }
+  .bt-action-icon { font-size: 16px; }
+  .bt-action-label { font-size: 11px; }
+  .bt-action-desc { font-size: 8px; }
+}
+
+/* ──────────────────────────────────────
+   PvP 로비
+   ────────────────────────────────────── */
+.pvp-lobby-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  background: #0a1018;
+  border: 1px dotted #5a4a8a;
+}
+.pvp-lobby-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pvp-lobby-host {
+  color: #c9a8e0;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+.pvp-lobby-age {
+  color: #666;
+  font-size: 9px;
+}
+.pvp-join-btn {
+  background: #1a0a2a;
+  border: 1px solid #a87dc9;
+  color: #c9a8e0;
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pvp-join-btn:hover {
+  background: #2a1a3a;
+  box-shadow: 0 0 6px rgba(168, 125, 201, 0.4);
+}
+.pvp-cancel-btn {
+  background: transparent;
+  border: 1px solid #666;
+  color: #888;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.pvp-cancel-btn:hover {
+  border-color: #c97d5f;
+  color: #c97d5f;
+}
+
+.pvp-spinner {
+  font-size: 36px;
+  color: #a87dc9;
+  display: inline-block;
+  animation: pvpSpin 2s linear infinite;
+}
+@keyframes pvpSpin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

@@ -5,7 +5,7 @@
 export const CONFIG = {
   // ── 앱 버전 (배포마다 올림) ───────────────────────────
   // 이 값이 바뀌면 모든 접속자가 자동 새로고침됨
-  APP_VERSION: '2026.04.22.32',
+  APP_VERSION: '2026.04.22.35',
 
   // ── 캐릭터 기본 ───────────────────────────────────────
   PET_NAME: 'MARS II',
@@ -173,14 +173,14 @@ export const CONFIG = {
     { key: 'draw',    label: '그림 그리기', override: { happy: 16, energy: -6,  hunger: -2 } },
   ],
 
-  // ── 행동 → 성격 영향 ─────────────────────────────────
+  // ── 행동 → 성격 영향 (적정 수치, 24명 누적 고려) ──────
   PERSONALITY_DELTA: {
-    feed:  { greedVsTemperance: +2 },
-    play:  { activeVsCalm: +2, socialVsIntro: +1 },
-    sleep: { activeVsCalm: -2, socialVsIntro: -1 },
-    clean: { greedVsTemperance: -1, diligentVsFree: +1 },
-    train: { diligentVsFree: +2, activeVsCalm: +1 },
-    talk:  { socialVsIntro: +1, diligentVsFree: -1 },
+    feed:  { greedVsTemperance: +1 },
+    play:  { activeVsCalm: +1, socialVsIntro: +1 },
+    sleep: { activeVsCalm: -1, socialVsIntro: -1 },
+    clean: { diligentVsFree: +1 },
+    train: { diligentVsFree: +1, activeVsCalm: +1 },
+    talk:  { socialVsIntro: +1 },
   },
 
   // ── 진화 단계 (시간 기준) ─────────────────────────────
@@ -206,14 +206,14 @@ export const CONFIG = {
       MAX: 30,
       MAX_TRIES: 7,
     },
-    // 블랙잭 (happy 중심 · 성격 영향 적정)
+    // 블랙잭 (happy 중심 · 성격 영향 최소화)
     BLACKJACK: {
       REWARDS: {
-        blackjack:  { happy: +15, bond: +2, personality: { activeVsCalm: +2, greedVsTemperance: +1 } },
+        blackjack:  { happy: +15, bond: +2, personality: { activeVsCalm: +2 } },
         win:        { happy: +10, bond: +1, personality: { socialVsIntro: +1, activeVsCalm: +1 } },
         push:       { happy: +3, intel: +1, personality: { activeVsCalm: -1 } },
-        lose:       { happy: +1, personality: { activeVsCalm: -2, greedVsTemperance: -2, socialVsIntro: -1 } },
-        bust:       { happy: -2, personality: { activeVsCalm: -2, greedVsTemperance: -2, diligentVsFree: +1 } },
+        lose:       { happy: +1, personality: { activeVsCalm: -1, socialVsIntro: -1 } },
+        bust:       { happy: -2, personality: { activeVsCalm: -1, diligentVsFree: +1 } },
       },
     },
     // 틱택토 (intel 중심 · 성격 영향 적정)
@@ -223,6 +223,37 @@ export const CONFIG = {
         win:  { intel: +6, bond: +1, personality: { diligentVsFree: +2, socialVsIntro: +1 } },
         draw: { intel: +4, personality: { activeVsCalm: -1, diligentVsFree: +1 } },
         lose: { intel: +2, personality: { activeVsCalm: -2, socialVsIntro: -1, diligentVsFree: -1 } },
+      },
+    },
+    // BATTLE - MARS II와의 다이스 결투 (PvE)
+    BATTLE: {
+      MAX_HP: 50,
+      DICE_MAX: 10,            // 1D10
+      DODGE_THRESHOLD: 8,      // 다이스 8 이상이면 완전 회피
+      // MARS II AI (HP 비율별 행동 분포)
+      AI_BEHAVIOR: {
+        // HP 75% 이상: 공격 위주
+        HIGH:   { attack: 0.7, defend: 0.2, dodge: 0.1 },
+        // HP 50% 이상 ~ 75%: 균형
+        MID:    { attack: 0.55, defend: 0.3, dodge: 0.15 },
+        // HP 25% 이상 ~ 50%: 생존 경향
+        LOW:    { attack: 0.5, defend: 0.3, dodge: 0.2 },
+        // HP 25% 이하: 회피 자주
+        CRIT:   { attack: 0.4, defend: 0.25, dodge: 0.35 },
+      },
+      REWARDS: {
+        // 빠른 승리 (3턴 이내)
+        win_fast: { strength: +5, intel: +3, happy: +5,
+                    personality: { activeVsCalm: +2, socialVsIntro: +1 } },
+        // 보통 승리 (4-6턴)
+        win:      { strength: +3, intel: +2, happy: +3,
+                    personality: { activeVsCalm: +1 } },
+        // 아슬한 승리 (HP 5 이하 + 7턴 이상)
+        win_slow: { strength: +1, intel: +1, happy: +1,
+                    personality: { activeVsCalm: -1, diligentVsFree: +1 } },
+        // 패배
+        lose:     { happy: -3,
+                    personality: { activeVsCalm: -1, greedVsTemperance: -1 } },
       },
     },
   },
