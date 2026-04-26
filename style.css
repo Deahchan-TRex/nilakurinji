@@ -1370,6 +1370,7 @@ body {
   left: 50%;
   top: 0;
   height: 100%;
+  max-width: 50%;
   transition: width 0.3s ease;
 }
 .persona-gauge-fill-left {
@@ -1377,14 +1378,16 @@ body {
   right: 50%;
   top: 0;
   height: 100%;
+  max-width: 50%;
   transition: width 0.3s ease;
 }
 .persona-gauge-value {
-  min-width: 32px;
+  min-width: 38px;
   text-align: right;
   font-family: monospace;
   font-size: 10px;
   font-weight: bold;
+  white-space: nowrap;
 }
 
 /* ──────────────────────────────────────

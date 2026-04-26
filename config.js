@@ -5,7 +5,7 @@
 export const CONFIG = {
   // ── 앱 버전 (배포마다 올림) ───────────────────────────
   // 이 값이 바뀌면 모든 접속자가 자동 새로고침됨
-  APP_VERSION: '2026.04.22.25',
+  APP_VERSION: '2026.04.22.28',
 
   // ── 캐릭터 기본 ───────────────────────────────────────
   PET_NAME: 'MARS II',
@@ -206,23 +206,23 @@ export const CONFIG = {
       MAX: 30,
       MAX_TRIES: 7,
     },
-    // 블랙잭 (happy 중심 · 성격 영향 크게)
+    // 블랙잭 (happy 중심 · 성격 영향 적정)
     BLACKJACK: {
       REWARDS: {
-        blackjack:  { happy: +15, bond: +2, personality: { activeVsCalm: +4, greedVsTemperance: +3 } },
-        win:        { happy: +10, bond: +1, personality: { socialVsIntro: +3, activeVsCalm: +2 } },
-        push:       { happy: +3, intel: +1, personality: { activeVsCalm: -2 } },
-        lose:       { happy: +1, personality: { activeVsCalm: -5, greedVsTemperance: -4, socialVsIntro: -2 } },
-        bust:       { happy: -2, personality: { activeVsCalm: -4, greedVsTemperance: -5, diligentVsFree: +3 } },
+        blackjack:  { happy: +15, bond: +2, personality: { activeVsCalm: +2, greedVsTemperance: +1 } },
+        win:        { happy: +10, bond: +1, personality: { socialVsIntro: +1, activeVsCalm: +1 } },
+        push:       { happy: +3, intel: +1, personality: { activeVsCalm: -1 } },
+        lose:       { happy: +1, personality: { activeVsCalm: -2, greedVsTemperance: -2, socialVsIntro: -1 } },
+        bust:       { happy: -2, personality: { activeVsCalm: -2, greedVsTemperance: -2, diligentVsFree: +1 } },
       },
     },
-    // 틱택토 (intel 중심 · 성격 영향 크게)
+    // 틱택토 (intel 중심 · 성격 영향 적정)
     TICTACTOE: {
       AI_OPTIMAL_RATE: 0.65,
       REWARDS: {
-        win:  { intel: +10, bond: +1, personality: { diligentVsFree: +4, socialVsIntro: +2 } },
-        draw: { intel: +7, personality: { activeVsCalm: -3, diligentVsFree: +2 } },
-        lose: { intel: +3, personality: { activeVsCalm: -5, socialVsIntro: -3, diligentVsFree: -2 } },
+        win:  { intel: +6, bond: +1, personality: { diligentVsFree: +2, socialVsIntro: +1 } },
+        draw: { intel: +4, personality: { activeVsCalm: -1, diligentVsFree: +1 } },
+        lose: { intel: +2, personality: { activeVsCalm: -2, socialVsIntro: -1, diligentVsFree: -1 } },
       },
     },
   },

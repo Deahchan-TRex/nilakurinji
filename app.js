@@ -291,9 +291,10 @@ function renderCommandButtons() {
     const stage = currentPet?.stage;
     const showLore = (stage !== 'TEEN' && stage !== 'ADULT');
     // 진행 중인 신호 (해독 진행 중, 미완료/미만료) 있으면 펄스 클래스
+    // 활성 = !skipped && !expired && !completedAt
     const hasActiveSignal = currentPet?.signals
       && Object.values(currentPet.signals).some(s =>
-        s && !s.skipped && !s.completedAt && !s.expiredAt
+        s && !s.skipped && !s.expired && !s.completedAt
       );
     const signalCls = hasActiveSignal ? ' signal-pulse' : '';
     if (showLore) {
@@ -1239,7 +1240,7 @@ function render() {
     if (stageResult.to === 'TEEN') {
       Backend.addLog({
         user: null, action: 'SYSTEM',
-        text: `◆ 새 감각 각성: 라디오 신호를 듣기 시작했다. 하루 세 번 잡힌다.`,
+        text: `◆ 새 감각 각성: 라디오 신호를 듣기 시작했다. 매시간마다 한 번씩 잡힌다.`,
         type: 'epic',
       });
     }
@@ -1262,6 +1263,7 @@ function renderReviveDots(count) {
 
 function personaRow(left, val, right) {
   const v = Math.max(-100, Math.min(100, val || 0));
+  const displayV = Math.round(v);  // 표시는 정수로
   // 양수면 오른쪽(right)으로 채워짐, 음수면 왼쪽(left)으로 채워짐
   const percent = Math.abs(v) / 2;  // 0 ~ 50%
   const isNeg = v < 0;
@@ -1279,10 +1281,10 @@ function personaRow(left, val, right) {
       <div class="persona-gauge">
         <div class="persona-gauge-track">
           <div class="persona-gauge-center"></div>
-          ${isNeg ? `<div class="persona-gauge-fill-left" style="width:${percent}%;background:${colorLeft};"></div>` : ''}
-          ${isPos ? `<div class="persona-gauge-fill-right" style="width:${percent}%;background:${colorRight};"></div>` : ''}
+          ${isNeg ? `<div class="persona-gauge-fill-left" style="width:${percent.toFixed(1)}%;background:${colorLeft};"></div>` : ''}
+          ${isPos ? `<div class="persona-gauge-fill-right" style="width:${percent.toFixed(1)}%;background:${colorRight};"></div>` : ''}
         </div>
-        <div class="persona-gauge-value" style="color:${v === 0 ? '#5a6a5e' : (isPos ? '#03B352' : '#e8a853')};">${v > 0 ? '+' : ''}${v}</div>
+        <div class="persona-gauge-value" style="color:${displayV === 0 ? '#5a6a5e' : (isPos ? '#03B352' : '#e8a853')};">${displayV > 0 ? '+' : ''}${displayV}</div>
       </div>
       <span class="persona-label-side" style="color:${labelColorRight};">${right} ▷</span>
     </div>
@@ -5654,6 +5656,95 @@ function showMinigameHub() {
 // 블랙잭 (BLACKJACK)
 // ════════════════════════════════════════════════════════════
 
+// ── 블러핑 시스템 ─────────────────────────────────────
+// 매 턴마다 표정/대사로 어필하되 때때로 거짓말
+const BJ_BLUFF_MODES = ['honest', 'bluff', 'neutral'];
+const BJ_BLUFF_WEIGHTS = [50, 35, 15];  // 정직 50%, 블러프 35%, 무표정 15%
+
+// 표정 + 대사 풀 (어필 종류별)
+const BJ_TELLS = {
+  confident: {
+    faces: ['( ̄ω ̄)', '(◔◡◔)', '(¬‿¬)'],
+    lines: [
+      '오, 괜찮은데?',
+      '이번엔 자신 있어.',
+      '히트?',
+      '받아도 될까.',
+      '후훗.',
+      '나쁘지 않아.',
+      '느낌이 와.',
+    ],
+  },
+  worried: {
+    faces: ['(>_<)', '( ;∀;)', '(；´д｀)'],
+    lines: [
+      '음... 어쩌지.',
+      '별로야.',
+      '이번엔 망했어.',
+      '스탠드 할까.',
+      '어떡해.',
+      '안 좋아.',
+      '못 받겠어.',
+    ],
+  },
+  neutral: {
+    faces: ['(-_-)', '(•_•)', '(´-ω-`)'],
+    lines: [
+      '...',
+      '흠.',
+      '글쎄.',
+      '그냥.',
+      '그러게.',
+      '음.',
+    ],
+  },
+};
+
+/**
+ * 점수 + 모드 → 어필 종류 결정
+ *  - 정직(honest): 17+ confident, 12-16 neutral, ≤11 worried
+ *  - 블러프(bluff): 17+ worried, 12-16 confident, ≤11 confident
+ *  - 무표정(neutral): 항상 neutral
+ */
+function bjPickTell(dealerScore, mode) {
+  if (mode === 'neutral') return 'neutral';
+  if (mode === 'honest') {
+    if (dealerScore >= 17) return 'confident';
+    if (dealerScore >= 12) return 'neutral';
+    return 'worried';
+  }
+  // bluff
+  if (dealerScore >= 17) return 'worried';
+  return 'confident';
+}
+
+function bjPickBluffMode() {
+  const total = BJ_BLUFF_WEIGHTS.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < BJ_BLUFF_MODES.length; i++) {
+    if (r < BJ_BLUFF_WEIGHTS[i]) return BJ_BLUFF_MODES[i];
+    r -= BJ_BLUFF_WEIGHTS[i];
+  }
+  return 'honest';
+}
+
+function bjPickFromPool(pool) {
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * 현재 보이는 dealer 점수 + bluffMode 기준으로 어필 갱신
+ * 플레이어가 카드 받을 때마다 다시 호출 → 자연스럽게 변화
+ */
+function bjUpdateTell(state) {
+  // dealer 보이는 카드 1장 기준 점수 (실제 합과 다를 수 있음 - 블러프 강화)
+  const visibleScore = bjHandValue(state.dealer);  // 모드 따라 어필 결정
+  const tell = bjPickTell(visibleScore, state.bluffMode);
+  state.currentTell = tell;
+  state.currentFace = bjPickFromPool(BJ_TELLS[tell].faces);
+  state.currentLine = bjPickFromPool(BJ_TELLS[tell].lines);
+}
+
 const BJ_SUITS = ['♠', '♥', '♦', '♣'];
 const BJ_RANKS = [
   { r: 'A', v: 11 }, { r: '2', v: 2 }, { r: '3', v: 3 }, { r: '4', v: 4 },
@@ -5702,11 +5793,20 @@ function showBlackjackGame() {
     hideDealer: true,
     animating: false,
     reward: checkMinigameRewardEligibility(),
+    // 블러핑
+    bluffMode: bjPickBluffMode(),  // 'honest' | 'bluff' | 'neutral'
+    currentTell: null,              // 'confident' | 'worried' | 'neutral'
+    currentFace: '',
+    currentLine: '',
+    bluffRevealed: false,           // 결과 공개 시 블러프 폭로 여부
   };
 
   // 초기 2장씩 배분
   state.player.push(state.deck.pop(), state.deck.pop());
   state.dealer.push(state.deck.pop(), state.deck.pop());
+
+  // 초기 어필 갱신 (보이는 카드 1장 기준)
+  bjUpdateTell(state);
 
   // 블랙잭 즉시 판정
   const pv = bjHandValue(state.player);
@@ -5760,12 +5860,25 @@ function renderBlackjack(modal, state) {
 
       <!-- 딜러 -->
       <div style="margin-bottom:14px;">
-        <div style="color:#8fb39a;font-size:11px;margin-bottom:6px;">
-          MARS II · ${state.hideDealer ? '?' : dv}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="color:#8fb39a;font-size:11px;">
+            MARS II · ${state.hideDealer ? '?' : dv}
+          </span>
+          ${!state.hideDealer && state.bluffRevealed && state.bluffMode === 'bluff' ? `
+            <span style="color:#e8a853;font-size:10px;font-weight:bold;letter-spacing:1px;">⚡ BLUFF!</span>
+          ` : ''}
         </div>
         <div class="bj-hand" id="bj-dealer-hand" style="display:flex;gap:8px;flex-wrap:wrap;">
           ${state.dealer.map((c, i) => bjCardHTML(c, i === 1 && state.hideDealer)).join('')}
         </div>
+
+        <!-- 블러핑 어필 (player 페이즈에만 보임) -->
+        ${state.phase === 'player' && state.currentFace ? `
+          <div style="margin-top:10px;padding:8px 12px;background:#0a1410;border-left:2px solid #5fb37a;display:flex;align-items:center;gap:12px;">
+            <span style="font-family:monospace;font-size:18px;color:#03B352;min-width:80px;text-align:center;">${state.currentFace}</span>
+            <span style="color:#c9c9c9;font-size:11px;font-style:italic;">"${state.currentLine}"</span>
+          </div>
+        ` : ''}
       </div>
 
       <!-- 구분선 -->
@@ -5825,11 +5938,26 @@ function bjResultBlock(state) {
   };
   const m = resultMeta[state.result] || resultMeta.push;
 
+  // 블러프 폭로 메시지
+  let bluffReveal = '';
+  if (state.bluffMode === 'bluff') {
+    state.bluffRevealed = true;
+    if (state.currentTell === 'worried') {
+      bluffReveal = '"사실은 자신 있었어. 들켰니?"';
+    } else if (state.currentTell === 'confident') {
+      bluffReveal = '"엄청 떨고 있었거든. 못 알아챘구나."';
+    }
+  } else if (state.bluffMode === 'honest' && state.bluffIntuited) {
+    bluffReveal = '"내 표정이 그렇게 솔직했어?"';
+  }
+
   return `
     <div style="padding:12px;border:1px solid ${m.color};background:${m.bg};margin-top:14px;text-align:center;">
       <div style="color:${m.color};font-size:14px;font-weight:bold;margin-bottom:4px;">${m.label}</div>
       <div style="color:#c9c9c9;font-size:11px;">${m.story}</div>
       <div style="color:#666;font-size:10px;margin-top:6px;">당신 ${pv} · MARS II ${dv}</div>
+      ${bluffReveal ? `<div style="color:#e8a853;font-size:11px;margin-top:8px;font-style:italic;">${bluffReveal}</div>` : ''}
+      ${state.bluffBonusApplied ? `<div style="color:#5fb37a;font-size:10px;margin-top:4px;">+ 블러프 간파 보너스: intel +2</div>` : ''}
       ${state.rewardText ? `<div style="color:#c9a06b;font-size:11px;margin-top:6px;">${state.rewardText}</div>` : ''}
       ${isMinigameTestMode() ? `<div style="color:#e8a853;font-size:10px;margin-top:4px;">[TEST · 저장 안 됨]</div>` : ''}
     </div>
@@ -5863,6 +5991,10 @@ function attachBlackjackHandlers(modal, state) {
       // 자동 스탠드
       state.phase = 'dealer';
       await bjDealerTurn(state);
+    } else {
+      // 히트 후 다음 턴: 새 블러핑 모드 + 어필 갱신 (자연스러운 변동)
+      state.bluffMode = bjPickBluffMode();
+      bjUpdateTell(state);
     }
     state.animating = false;
     renderBlackjack(modal, state);
@@ -5913,6 +6045,14 @@ async function onBlackjackFinish(state) {
   const reward = rewards[state.result];
   if (!reward) return;
 
+  // 블러프 간파 보너스 판정
+  // - 블러프 모드였고, 플레이어가 이김 = 간파 성공
+  // - 블러프 모드였고 졌어도 dealer가 망한 경우(고득점인 척 했는데 사실 약했음) 등 일부 인정
+  state.bluffBonusApplied = false;
+  if (state.bluffMode === 'bluff' && (state.result === 'win' || state.result === 'blackjack')) {
+    state.bluffBonusApplied = true;
+  }
+
   // 테스트 모드: 저장 스킵
   if (isMinigameTestMode()) {
     state.rewardText = `(테스트 · ${JSON.stringify(reward).slice(0, 40)}...)`;
@@ -5946,6 +6086,12 @@ async function onBlackjackFinish(state) {
       const label = { activeVsCalm:d<0?'차분':'활발', socialVsIntro:d<0?'내향':'사교', greedVsTemperance:d<0?'절제':'탐욕', diligentVsFree:d<0?'자유':'성실' }[axis];
       if (label) parts.push(`${label} ${d > 0 ? '+' : ''}${d}`);
     }
+  }
+
+  // 블러프 간파 보너스: intel +2
+  if (state.bluffBonusApplied) {
+    currentPet.intel = Math.min(100, (currentPet.intel || 0) + 2);
+    parts.push('intel +2 (간파)');
   }
 
   state.rewardText = parts.join(', ');
@@ -6396,7 +6542,7 @@ async function onUpDownFinish(state, reward) {
     return;
   }
 
-  // 보상 계산 (성격 변화 폭 큼)
+  // 보상 계산 (성격 변화 적정)
   // 승리 = 오른쪽 성격 강화, 패배 = 왼쪽 성격 전환
   let reward_text = '';
   const triesUsed = state.tries;
@@ -6405,30 +6551,30 @@ async function onUpDownFinish(state, reward) {
     if (triesUsed <= 3) {
       // 빠른 승리
       currentPet.happy = Math.min(100, currentPet.happy + 10);
-      currentPet.bond = Math.min(100, (currentPet.bond || 0) + 2);
-      currentPet.personality.socialVsIntro = Math.min(100, (currentPet.personality.socialVsIntro || 0) + 3);
-      currentPet.personality.activeVsCalm = Math.min(100, (currentPet.personality.activeVsCalm || 0) + 3);
-      reward_text = `happy +10, bond +2, 사교 +3, 활발 +3`;
+      currentPet.bond = Math.min(100, (currentPet.bond || 0) + 1);
+      currentPet.personality.socialVsIntro = Math.min(100, (currentPet.personality.socialVsIntro || 0) + 1);
+      currentPet.personality.activeVsCalm = Math.min(100, (currentPet.personality.activeVsCalm || 0) + 1);
+      reward_text = `happy +10, bond +1, 사교 +1, 활발 +1`;
     } else if (triesUsed <= 5) {
       // 보통 승리
       currentPet.happy = Math.min(100, currentPet.happy + 7);
       currentPet.bond = Math.min(100, (currentPet.bond || 0) + 1);
-      currentPet.personality.diligentVsFree = Math.min(100, (currentPet.personality.diligentVsFree || 0) + 3);
-      reward_text = `happy +7, bond +1, 성실 +3`;
+      currentPet.personality.diligentVsFree = Math.min(100, (currentPet.personality.diligentVsFree || 0) + 1);
+      reward_text = `happy +7, bond +1, 성실 +1`;
     } else {
-      // 늦은 승리 (아슬아슬) → 차분으로 크게 전환
+      // 늦은 승리 (아슬아슬) → 차분으로 전환
       currentPet.happy = Math.min(100, currentPet.happy + 5);
-      currentPet.personality.activeVsCalm = Math.max(-100, (currentPet.personality.activeVsCalm || 0) - 4);
-      currentPet.personality.diligentVsFree = Math.min(100, (currentPet.personality.diligentVsFree || 0) + 2);
-      reward_text = `happy +5, 차분 +4, 성실 +2`;
+      currentPet.personality.activeVsCalm = Math.max(-100, (currentPet.personality.activeVsCalm || 0) - 2);
+      currentPet.personality.diligentVsFree = Math.min(100, (currentPet.personality.diligentVsFree || 0) + 1);
+      reward_text = `happy +5, 차분 +2, 성실 +1`;
     }
   } else {
-    // 실패: 왼쪽 성격으로 크게 전환 (반성/차분/절제)
+    // 실패: 왼쪽 성격으로 전환 (반성/차분/절제)
     currentPet.happy = Math.min(100, currentPet.happy + 3);
-    currentPet.personality.activeVsCalm = Math.max(-100, (currentPet.personality.activeVsCalm || 0) - 5);
-    currentPet.personality.greedVsTemperance = Math.max(-100, (currentPet.personality.greedVsTemperance || 0) - 4);
-    currentPet.personality.socialVsIntro = Math.max(-100, (currentPet.personality.socialVsIntro || 0) - 2);
-    reward_text = `happy +3, 차분 +5, 절제 +4, 내향 +2`;
+    currentPet.personality.activeVsCalm = Math.max(-100, (currentPet.personality.activeVsCalm || 0) - 2);
+    currentPet.personality.greedVsTemperance = Math.max(-100, (currentPet.personality.greedVsTemperance || 0) - 2);
+    currentPet.personality.socialVsIntro = Math.max(-100, (currentPet.personality.socialVsIntro || 0) - 1);
+    reward_text = `happy +3, 차분 +2, 절제 +2, 내향 +1`;
   }
 
   await incrementMinigameCount();

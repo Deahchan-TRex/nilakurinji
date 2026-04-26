@@ -24,13 +24,26 @@ export function tickStats(pet) {
   pet.energy  = Math.max(0, pet.energy  - decay.energy  * hoursElapsed * rate);
   pet.hygiene = Math.max(0, pet.hygiene - decay.hygiene * hoursElapsed * rate);
 
-  // STRENGTH/INTEL: 하루 -5 (시간당 -0.21) → 자주 운동/대화 필요
+  // STRENGTH/INTEL: 하루 -15 (시간당 -0.625) → 자주 돌봄 필요, 100 천장 방지
   // BOND: 하루 -1 (시간당 -0.042) → 유대는 천천히 식음
   // EGG에서는 감소 안 함
   if (pet.stage !== 'EGG') {
-    pet.strength = Math.max(0, (pet.strength || 0) - 0.21 * hoursElapsed);
-    pet.intel    = Math.max(0, (pet.intel    || 0) - 0.21 * hoursElapsed);
+    pet.strength = Math.max(0, (pet.strength || 0) - 0.625 * hoursElapsed);
+    pet.intel    = Math.max(0, (pet.intel    || 0) - 0.625 * hoursElapsed);
     pet.bond     = Math.max(0, (pet.bond     || 0) - 0.042 * hoursElapsed);
+
+    // 성격 자연 회귀 (극단값 → 0 방향, 시간당 약 0.5씩)
+    // |값|이 클수록 더 강하게 끌려옴 (제곱 비례)
+    // 극단(±100)일 때 시간당 약 -2, 중간(±50)일 때 -0.5
+    pet.personality = pet.personality || {};
+    for (const axis of ['activeVsCalm', 'greedVsTemperance', 'socialVsIntro', 'diligentVsFree']) {
+      const v = pet.personality[axis] || 0;
+      if (v === 0) continue;
+      const pull = (v * v / 5000) * hoursElapsed;  // |v|=100 → 시간당 2
+      const newV = v > 0 ? Math.max(0, v - pull) : Math.min(0, v + pull);
+      // 정밀도 오차 누적 방지: 소수 둘째자리까지만 유지
+      pet.personality[axis] = Math.round(newV * 100) / 100;
+    }
   }
 
   pet.lastTickAt = now;
