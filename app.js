@@ -7152,34 +7152,137 @@ function playBattleFinishSound(isVictory = true) {
 }
 
 /**
+ * HP 바 위에 데미지 숫자 띄우기
+ * @param {Element} modal - battle modal
+ * @param {string} target - 'mars' | 'crew' (어느 HP 바 위에)
+ * @param {number} damage - 데미지 양 (0이면 차단)
+ */
+function spawnDamagePopup(modal, target, damage) {
+  // target에 해당하는 HP 바 행 찾기
+  const rows = modal.querySelectorAll('.bt-hp-row');
+  if (!rows || rows.length < 2) return;
+  // rows[0] = MARS II, rows[1] = 크루 (renderBattle 순서)
+  const row = target === 'mars' ? rows[0] : rows[1];
+
+  const popup = document.createElement('div');
+  popup.className = 'bt-damage-popup' + (damage === 0 ? ' zero' : '');
+  popup.textContent = damage === 0 ? '✓ BLOCK' : `-${damage}`;
+  row.appendChild(popup);
+  setTimeout(() => popup.remove(), 1500);
+}
+
+/**
  * MARS II 응원 코멘트 풀
  */
+/**
+ * MARS II 응원/리액션 풀 (확장)
+ * 매 다이스/페이즈에 30% 확률로 등장
+ */
 const MARS_CHEERS = {
-  attacker: [
-    '{name} 힘내!',
-    '{name}, 잘하고 있어!',
-    '{name}, 한 방 먹여!',
-    '집중해, {name}!',
-    '{name}, 멋져.',
+  // 선턴 다이스 결과
+  preroll_crew_win: [
+    '{name}, 먼저 가!',
+    '{name}이 운이 좋네.',
+    '주사위가 {name}을 골랐어.',
+    '{name}, 시작해!',
   ],
-  defender: [
-    '{name}, 조심해!',
-    '{name}, 버텨!',
-    '잘 막아, {name}!',
-    '{name}, 정신 차려!',
-    '{name}, 피해!',
+  preroll_mars_win: [
+    '내가 먼저야!',
+    '하하, 운이 좋네.',
+    '내 차례부터.',
+    '주사위가 날 골랐어.',
   ],
   preroll: [
     '두근두근... 누가 먼저?',
     '주사위가 결정한다.',
     '운명의 다이스.',
     '준비... 굴려!',
+    '눈 감고 굴려도 돼.',
   ],
-  victory: [
-    '{name}, 이겼어! 와!',
-    '대단해, {name}!',
-    '{name}, 잘했어!',
-    '봤어 봤어, {name}!',
+
+  // 크루가 공격 — 굴림 직전/직후
+  crew_attack_high: [   // 크루 다이스 8+
+    '와! {name} 굉장해!',
+    '{name}, 그거야!',
+    '대박이야 {name}!',
+    '{name}이 진심이네.',
+  ],
+  crew_attack_mid: [    // 4-7
+    '{name}, 좋아!',
+    '나쁘지 않아.',
+    '{name}, 계속해.',
+    '괜찮아 {name}.',
+  ],
+  crew_attack_low: [    // 1-3
+    '{name}... 괜찮아?',
+    '음... {name}, 다음엔 더!',
+    '{name}, 이번엔 운이 없어.',
+    '아쉬워 {name}.',
+  ],
+
+  // MARS II 공격 — 자기 다이스
+  mars_attack_high: [
+    '받아라!',
+    '내 차례야!',
+    '{name}, 막아 봐!',
+    '하앗!',
+    '봤지? 이게 나야.',
+  ],
+  mars_attack_mid: [
+    '간다.',
+    '이 정도면 충분해.',
+    '한 번 받아 봐.',
+  ],
+  mars_attack_low: [
+    '음... 다음엔 잘 할게.',
+    '에이, 별로네.',
+    '연습이 필요해.',
+  ],
+
+  // 크루가 데미지 받음
+  crew_hurt_big: [      // 5+
+    '{name}!! 괜찮아?',
+    '아... {name}, 미안.',
+    '{name}, 정신 차려!',
+    '내가 너무 셌나?',
+  ],
+  crew_hurt_small: [
+    '버텨, {name}!',
+    '{name}, 살짝만 아플 거야.',
+    '괜찮아 {name}?',
+  ],
+  crew_block: [
+    '{name}, 잘 막았어!',
+    '오, {name} 단단해!',
+    '{name}, 멋져!',
+  ],
+  crew_dodge: [
+    '{name}, 빠르네!',
+    '와, {name} 회피!',
+    '{name}이 잘도 피했어.',
+  ],
+
+  // MARS II가 데미지 받음
+  mars_hurt_big: [      // 5+
+    '으아악! 아파!',
+    '{name}, 살살 좀!',
+    '아야야... 진심이야?',
+    '으... 정말 아프네.',
+  ],
+  mars_hurt_small: [
+    '쳇, 살짝.',
+    '음, 그 정도는.',
+    '뭐, 이 정도쯤이야.',
+  ],
+  mars_block: [
+    '하! 안 통해.',
+    '내 방어는 어때?',
+    '막았어!',
+  ],
+  mars_dodge: [
+    '에헤, 안 맞아!',
+    '잡힐 줄 알았어?',
+    '이 정도쯤은 피해.',
   ],
 };
 
@@ -7187,7 +7290,37 @@ function pickMarsCheer(kind, name) {
   const pool = MARS_CHEERS[kind] || [];
   if (pool.length === 0) return null;
   const tpl = pool[Math.floor(Math.random() * pool.length)];
-  return tpl.replace(/\{name\}/g, name);
+  return tpl.replace(/\{name\}/g, name || '너');
+}
+
+/**
+ * 크루별 개인화 대사 - 특정 크루가 자주 한 말 인용
+ * pet.pendingQuestions에서 그 크루가 남긴 답변(answer)을 찾아서 인용
+ * @returns {string|null} 인용 가능하면 텍스트, 아니면 null
+ */
+function tryCrewQuoteCheer(crewName) {
+  if (!currentPet?.pendingQuestions) return null;
+  // 답한 질문들 중 그 크루가 답한 것 (answeredBy === crewName)
+  // 또는 그 크루가 한 질문 (user === crewName)
+  const myQs = currentPet.pendingQuestions.filter(q =>
+    q && (q.user === crewName || q.answeredBy === crewName) && q.text
+  );
+  if (myQs.length === 0) return null;
+  // 30%만 사용
+  if (Math.random() > 0.3) return null;
+  const q = myQs[Math.floor(Math.random() * myQs.length)];
+  // 너무 길면 자름
+  let snippet = (q.text || '').replace(/['"`]/g, '').trim();
+  if (snippet.length > 24) snippet = snippet.slice(0, 22) + '...';
+  if (!snippet) return null;
+  // MARS II 메타 발언 (크루의 과거 발언 회상)
+  const templates = [
+    `"${snippet}"... 그 말 기억나.`,
+    `${crewName}, "${snippet}"라고 했었지?`,
+    `"${snippet}"... 좋은 말이야.`,
+    `${crewName}, 그때 "${snippet}"이라더니!`,
+  ];
+  return templates[Math.floor(Math.random() * templates.length)];
 }
 
 /**
@@ -7590,9 +7723,16 @@ async function handleBattlePreroll(modal, state) {
   state.currentAttacker = state.firstAttacker;
   playSfx('blip');
 
-  // MARS II 응원 (선턴 결과)
-  if (Math.random() < 0.5) {
-    state.cheer = pickMarsCheer('preroll');
+  // MARS II 응원 (선턴 결과별)
+  if (Math.random() < 0.7) {
+    // 70% 일반 응원, 30% 크루 인용
+    const quote = tryCrewQuoteCheer(currentUser.name);
+    if (quote) {
+      state.cheer = quote;
+    } else {
+      const cheerKind = state.firstAttacker === 'crew' ? 'preroll_crew_win' : 'preroll_mars_win';
+      state.cheer = pickMarsCheer(cheerKind, currentUser.name) || pickMarsCheer('preroll');
+    }
   }
 
   renderBattle(modal, state);
@@ -7640,9 +7780,13 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
   }
   playSfx('blip');
 
-  // MARS II 응원
-  if (Math.random() < 0.3) {
-    state.cheer = pickMarsCheer('attacker', currentUser.name);
+  // MARS II 응원 - 크루 다이스 값에 따라 다르게
+  if (Math.random() < 0.55) {
+    let kind;
+    if (state.attackDice >= 8) kind = 'crew_attack_high';
+    else if (state.attackDice >= 4) kind = 'crew_attack_mid';
+    else kind = 'crew_attack_low';
+    state.cheer = pickMarsCheer(kind, currentUser.name);
   }
 
   state.phase = 'defense';
@@ -7668,12 +7812,34 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
   // 3) 데미지 계산 + 카드 표시
   resolveBattleAttack(state, 'crew');
   playSfx(state.pendingDamage > 0 ? 'happy' : 'cute');
+
+  // MARS II 리액션 - 자기가 데미지 얼마나 받았는지에 따라
+  if (Math.random() < 0.6) {
+    let kind;
+    if (state.pendingDamage === 0) {
+      kind = state.defenseAction === 'dodge' ? 'mars_dodge' : 'mars_block';
+    } else if (state.pendingDamage >= 5) {
+      kind = 'mars_hurt_big';
+    } else {
+      kind = 'mars_hurt_small';
+    }
+    state.cheer = pickMarsCheer(kind, currentUser.name);
+  }
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
 
-  await new Promise(r3 => setTimeout(r3, 1100));
+  await new Promise(r3 => setTimeout(r3, 700));
 
+  // 4) 데미지 팝업 + HP 깎기 (동시에)
+  spawnDamagePopup(modal, 'mars', state.pendingDamage);
   state.marsHp = Math.max(0, state.marsHp - state.pendingDamage);
+  // pendingDamage 유지 - render에서 HP 흔들림 적용 위해
+  renderBattle(modal, state);
+  attachBattleHandlers(modal, state);
+
+  await new Promise(r4 => setTimeout(r4, 1100));
+
+  // 5) pendingDamage 정리
 
   // 종료 체크
   if (state.marsHp <= 0) {
@@ -7719,9 +7885,13 @@ async function handleBattleMarsAttack(modal, state) {
   state.attackDice = rollD10();
   playSfx('blip');
 
-  // MARS II 응원 (방어자=크루에게)
-  if (Math.random() < 0.3) {
-    state.cheer = pickMarsCheer('defender', currentUser.name);
+  // MARS II 자기 공격 어필 - 다이스 값에 따라
+  if (Math.random() < 0.55) {
+    let kind;
+    if (state.attackDice >= 8) kind = 'mars_attack_high';
+    else if (state.attackDice >= 4) kind = 'mars_attack_mid';
+    else kind = 'mars_attack_low';
+    state.cheer = pickMarsCheer(kind, currentUser.name);
   }
 
   state.phase = 'defense';
@@ -7752,12 +7922,31 @@ async function handleBattleCrewDefense(modal, state, defAction) {
   // 2) 데미지 계산 + 카드 표시
   resolveBattleAttack(state, 'mars');
   playSfx(state.pendingDamage > 0 ? 'angry' : 'cute');
+
+  // MARS II 리액션 - 크루가 데미지 받았는지에 따라
+  if (Math.random() < 0.6) {
+    let kind;
+    if (state.pendingDamage === 0) {
+      kind = state.defenseAction === 'dodge' ? 'crew_dodge' : 'crew_block';
+    } else if (state.pendingDamage >= 5) {
+      kind = 'crew_hurt_big';
+    } else {
+      kind = 'crew_hurt_small';
+    }
+    state.cheer = pickMarsCheer(kind, currentUser.name);
+  }
+  renderBattle(modal, state);
+  attachBattleHandlers(modal, state);
+
+  await new Promise(r => setTimeout(r, 700));
+
+  // 3) 데미지 팝업 + HP 깎기
+  spawnDamagePopup(modal, 'crew', state.pendingDamage);
+  state.crewHp = Math.max(0, state.crewHp - state.pendingDamage);
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
 
   await new Promise(r => setTimeout(r, 1100));
-
-  state.crewHp = Math.max(0, state.crewHp - state.pendingDamage);
 
   // 종료 체크
   if (state.crewHp <= 0) {

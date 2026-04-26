@@ -2362,3 +2362,36 @@ body {
 .bt-hp-bar {
   transition: background 0.4s ease, box-shadow 0.4s ease;
 }
+
+/* ──────────────────────────────────────
+   HP 바 데미지 숫자 떠오름 효과
+   ────────────────────────────────────── */
+.bt-hp-row {
+  position: relative;  /* 데미지 숫자 anchor */
+}
+.bt-damage-popup {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 22px;
+  font-weight: bold;
+  color: #ff4a4a;
+  text-shadow: 0 0 8px #ff4a4a, 0 0 16px rgba(255,74,74,0.5);
+  font-family: 'Courier New', monospace;
+  pointer-events: none;
+  animation: btDamagePopup 1.4s ease-out forwards;
+  z-index: 10;
+}
+@keyframes btDamagePopup {
+  0%   { transform: translateY(-50%) scale(0.5); opacity: 0; }
+  20%  { transform: translateY(-80%) scale(1.4); opacity: 1; }
+  40%  { transform: translateY(-100%) scale(1.0); opacity: 1; }
+  100% { transform: translateY(-180%) scale(0.9); opacity: 0; }
+}
+
+/* 0 데미지일 때는 다른 스타일 */
+.bt-damage-popup.zero {
+  color: #7d9cb3;
+  text-shadow: 0 0 6px #7d9cb3;
+}
