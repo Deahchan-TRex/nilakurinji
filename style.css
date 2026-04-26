@@ -1866,14 +1866,12 @@ body {
   color: #c9c9c9;
   font-weight: bold;
   text-shadow: 0 0 8px rgba(255,255,255,0.2);
-  animation: btDiceShake 0.4s ease-out;
+  animation: btDiceGlow 0.6s ease-out;
 }
-@keyframes btDiceShake {
-  0%   { transform: translateX(0) rotate(0deg); }
-  25%  { transform: translateX(-3px) rotate(-8deg); }
-  50%  { transform: translateX(3px) rotate(8deg); }
-  75%  { transform: translateX(-2px) rotate(-4deg); }
-  100% { transform: translateX(0) rotate(0deg); }
+@keyframes btDiceGlow {
+  0%   { filter: brightness(0.6); text-shadow: 0 0 0 transparent; opacity: 0.5; }
+  40%  { filter: brightness(1.5); text-shadow: 0 0 16px currentColor; opacity: 1; }
+  100% { filter: brightness(1.0); text-shadow: 0 0 8px rgba(255,255,255,0.2); opacity: 1; }
 }
 .bt-dice-num {
   font-size: 14px;
@@ -2216,12 +2214,12 @@ body {
 .bt-dice-side.attacker .bt-dice-face {
   color: #ffd700;
   text-shadow: 0 0 12px #ffd700;
-  animation: btAttackerShake 0.5s ease-out;
+  animation: btAttackerGlow 0.6s ease-out;
 }
-@keyframes btAttackerShake {
-  0%, 100% { transform: translateX(0); }
-  25%      { transform: translateX(-4px) rotate(-3deg); }
-  75%      { transform: translateX(4px) rotate(3deg); }
+@keyframes btAttackerGlow {
+  0%   { filter: brightness(0.5); text-shadow: 0 0 0 transparent; }
+  40%  { filter: brightness(1.6); text-shadow: 0 0 24px #ffd700; }
+  100% { filter: brightness(1.0); text-shadow: 0 0 12px #ffd700; }
 }
 .bt-dice-num.huge {
   font-size: 22px;
@@ -2343,4 +2341,24 @@ body {
   .bt-dice-num.huge { font-size: 18px; }
   .bt-damage-headline { font-size: 13px; }
   .bt-damage-num { font-size: 14px; }
+}
+
+/* ──────────────────────────────────────
+   HP 바 데미지 시각 효과
+   ────────────────────────────────────── */
+.bt-hp-row.bt-hp-hit {
+  animation: btHpRowShake 0.5s ease-out;
+}
+@keyframes btHpRowShake {
+  0%   { transform: translateX(0); background: #0a1410; }
+  20%  { transform: translateX(-3px); background: rgba(201,125,95,0.2); }
+  40%  { transform: translateX(3px); background: rgba(201,125,95,0.3); }
+  60%  { transform: translateX(-2px); background: rgba(201,125,95,0.15); }
+  80%  { transform: translateX(2px); background: rgba(201,125,95,0.08); }
+  100% { transform: translateX(0); background: #0a1410; }
+}
+
+/* HP 바 자체 트랜지션 부드럽게 */
+.bt-hp-bar {
+  transition: background 0.4s ease, box-shadow 0.4s ease;
 }

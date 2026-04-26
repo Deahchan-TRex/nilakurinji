@@ -7517,12 +7517,12 @@ function renderBattle(modal, state) {
       ${logHTML}
 
       <!-- HP 바 -->
-      <div class="bt-hp-row">
+      <div class="bt-hp-row ${state.pendingDamage > 0 && state.currentAttacker === 'crew' ? 'bt-hp-hit' : ''}">
         <span class="bt-hp-label" style="color:#c97d5f;">MARS II</span>
         <div class="bt-hp-bars">${marsBarsHTML}</div>
         <span class="bt-hp-value">${state.marsHp}/${state.maxHp}</span>
       </div>
-      <div class="bt-hp-row">
+      <div class="bt-hp-row ${state.pendingDamage > 0 && state.currentAttacker === 'mars' ? 'bt-hp-hit' : ''}">
         <span class="bt-hp-label" style="color:#03B352;">${currentUser.name}</span>
         <div class="bt-hp-bars">${crewBarsHTML}</div>
         <span class="bt-hp-value">${state.crewHp}/${state.maxHp}</span>
@@ -7532,6 +7532,14 @@ function renderBattle(modal, state) {
       ${actionHTML}
     </div>
   `;
+
+  // 데미지 카드가 있으면 보이는 위치로 스크롤
+  if (state.pendingDamage !== undefined && state.pendingDamage !== 0 || state.defenseDice !== null) {
+    setTimeout(() => {
+      const card = modal.querySelector('.bt-damage-card');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
+  }
 }
 
 function attachBattleHandlers(modal, state) {
@@ -7589,7 +7597,7 @@ async function handleBattlePreroll(modal, state) {
 
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
-  await new Promise(r => setTimeout(r, 1500));
+  await new Promise(r => setTimeout(r, 900));
 
   state.cheer = null;
   // 결과 로그
@@ -7638,22 +7646,32 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
   }
 
   state.phase = 'defense';
-  // MARS II 방어 결정
-  await new Promise(r => setTimeout(r, 700));
-  state.cheer = null;
 
-  // MARS II 행동 (defend/dodge만 - 이미 방어자)
+  // 1) 크루 공격 다이스만 먼저 표시
+  state.defenseDice = null;
+  state.defenseAction = null;
+  renderBattle(modal, state);
+  attachBattleHandlers(modal, state);
+  await new Promise(r => setTimeout(r, 700));
+
+  // 2) MARS II 방어/회피 결정 + 다이스
+  state.cheer = null;
   const r = Math.random();
   state.defenseAction = r < 0.6 ? 'defend' : 'dodge';
   state.defenseDice = rollD10();
+  playSfx('blip');
+  renderBattle(modal, state);
+  attachBattleHandlers(modal, state);
 
-  await new Promise(r => setTimeout(r, 600));
+  await new Promise(r2 => setTimeout(r2, 700));
 
-  // 데미지 계산
+  // 3) 데미지 계산 + 카드 표시
   resolveBattleAttack(state, 'crew');
   playSfx(state.pendingDamage > 0 ? 'happy' : 'cute');
+  renderBattle(modal, state);
+  attachBattleHandlers(modal, state);
 
-  await new Promise(r => setTimeout(r, 800));
+  await new Promise(r3 => setTimeout(r3, 1100));
 
   state.marsHp = Math.max(0, state.marsHp - state.pendingDamage);
 
@@ -7688,7 +7706,7 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
 
   // MARS II 차례면 자동
   if (state.currentAttacker === 'mars') {
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r4 => setTimeout(r4, 500));
     handleBattleMarsAttack(modal, state);
   }
 }
@@ -7726,12 +7744,18 @@ async function handleBattleCrewDefense(modal, state, defAction) {
   state.cheer = null;
   playSfx('blip');
 
-  await new Promise(r => setTimeout(r, 800));
+  // 1) 방어/회피 다이스 표시
+  renderBattle(modal, state);
+  attachBattleHandlers(modal, state);
+  await new Promise(r => setTimeout(r, 700));
 
+  // 2) 데미지 계산 + 카드 표시
   resolveBattleAttack(state, 'mars');
   playSfx(state.pendingDamage > 0 ? 'angry' : 'cute');
+  renderBattle(modal, state);
+  attachBattleHandlers(modal, state);
 
-  await new Promise(r => setTimeout(r, 800));
+  await new Promise(r => setTimeout(r, 1100));
 
   state.crewHp = Math.max(0, state.crewHp - state.pendingDamage);
 
@@ -7764,7 +7788,7 @@ async function handleBattleCrewDefense(modal, state, defAction) {
   attachBattleHandlers(modal, state);
 
   if (state.currentAttacker === 'mars') {
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 500));
     handleBattleMarsAttack(modal, state);
   }
 }
