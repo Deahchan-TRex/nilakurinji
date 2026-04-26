@@ -7654,15 +7654,16 @@ function renderBattle(modal, state) {
     const defColor = state.currentAttacker === 'crew' ? '#c97d5f' : '#03B352';
     const variantLabel = state.attackVariant === 'quick' ? '🗡 견제' : '⚔ 강타';
 
-    // 데미지 시각화 (damageResolved이면 카드 숨김 - 한 번만 등장)
+    // 데미지 시각화 (damageResolved이면 애니메이션 없이 정적으로 표시)
     let damageHTML = '';
-    if (state.defenseDice !== null && state.defenseAction !== null && !state.damageResolved) {
+    if (state.defenseDice !== null && state.defenseAction !== null) {
       const isDodgeSuccess = state.defenseAction === 'dodge' && state.defenseDice >= 8;
       const isFullDodgeFail = state.defenseAction === 'dodge' && state.defenseDice < 8;
+      const noAnim = state.damageResolved ? ' no-anim' : '';
 
       if (isDodgeSuccess) {
         damageHTML = `
-          <div class="bt-damage-card no-damage">
+          <div class="bt-damage-card no-damage${noAnim}">
             <div class="bt-damage-headline">💨 완전 회피!</div>
             <div class="bt-damage-detail">
               회피 다이스 <strong>${state.defenseDice}</strong> (8+) → 데미지 <strong>0</strong>
@@ -7671,7 +7672,7 @@ function renderBattle(modal, state) {
         `;
       } else if (isFullDodgeFail) {
         damageHTML = `
-          <div class="bt-damage-card big-damage">
+          <div class="bt-damage-card big-damage${noAnim}">
             <div class="bt-damage-headline">⚠ 회피 실패!</div>
             <div class="bt-damage-detail">
               회피 ${state.defenseDice} (8 미만) → <strong class="bt-damage-num">${state.attackDice}</strong> 피해
@@ -7683,7 +7684,7 @@ function renderBattle(modal, state) {
         const dmg = Math.max(0, state.attackDice - state.defenseDice);
         if (dmg === 0) {
           damageHTML = `
-            <div class="bt-damage-card no-damage">
+            <div class="bt-damage-card no-damage${noAnim}">
               <div class="bt-damage-headline">🛡 완전 차단!</div>
               <div class="bt-damage-detail">
                 공격 ${state.attackDice} − 방어 ${state.defenseDice} = <strong>0</strong> 피해
@@ -7692,7 +7693,7 @@ function renderBattle(modal, state) {
           `;
         } else {
           damageHTML = `
-            <div class="bt-damage-card damage">
+            <div class="bt-damage-card damage${noAnim}">
               <div class="bt-damage-headline">⚔ ${dmg} 피해 적중</div>
               <div class="bt-damage-detail">
                 공격 ${state.attackDice} − 방어 ${state.defenseDice} = <strong class="bt-damage-num">${dmg}</strong>
@@ -7807,12 +7808,12 @@ function renderBattle(modal, state) {
       ${logHTML}
 
       <!-- HP 바 -->
-      <div class="bt-hp-row ${state.pendingDamage > 0 && state.currentAttacker === 'crew' ? 'bt-hp-hit' : ''}">
+      <div class="bt-hp-row ${state.pendingDamage > 0 && state.currentAttacker === 'crew' && !state.damageResolved ? 'bt-hp-hit' : ''}">
         <span class="bt-hp-label emoji-host" data-side="mars" style="color:#c97d5f;">MARS II</span>
         <div class="bt-hp-bars">${marsBarsHTML}</div>
         <span class="bt-hp-value">${state.marsHp}/${state.maxHp}</span>
       </div>
-      <div class="bt-hp-row ${state.pendingDamage > 0 && state.currentAttacker === 'mars' ? 'bt-hp-hit' : ''}">
+      <div class="bt-hp-row ${state.pendingDamage > 0 && state.currentAttacker === 'mars' && !state.damageResolved ? 'bt-hp-hit' : ''}">
         <span class="bt-hp-label emoji-host" data-side="crew" style="color:#03B352;">${currentUser.name}</span>
         <div class="bt-hp-bars">${crewBarsHTML}</div>
         <span class="bt-hp-value">${state.crewHp}/${state.maxHp}</span>
@@ -8758,21 +8759,22 @@ function renderPvpBattle(modal, state) {
     const defColor = b.currentAttacker === state.mySlot ? '#c97d5f' : '#03B352';
     const variantLabel = b.attackVariant === 'quick' ? '🗡 견제' : '⚔ 강타';
 
-    // 데미지 카드 (damageCardShown이면 숨김 - 한 번만 등장)
+    // 데미지 카드 (damageCardShown이면 애니메이션 없이 정적으로)
     let damageHTML = '';
-    if (b.phase === 'resolve' && b.defenseDice !== null && !state.damageCardShown) {
+    if (b.phase === 'resolve' && b.defenseDice !== null) {
       const isDodgeSuccess = b.defenseAction === 'dodge' && b.defenseDice >= 8;
       const isDodgeFail = b.defenseAction === 'dodge' && b.defenseDice < 8;
+      const noAnim = state.damageCardShown ? ' no-anim' : '';
       if (isDodgeSuccess) {
         damageHTML = `
-          <div class="bt-damage-card no-damage">
+          <div class="bt-damage-card no-damage${noAnim}">
             <div class="bt-damage-headline">💨 완전 회피!</div>
             <div class="bt-damage-detail">회피 다이스 <strong>${b.defenseDice}</strong> (8+) → 데미지 <strong>0</strong></div>
           </div>
         `;
       } else if (isDodgeFail) {
         damageHTML = `
-          <div class="bt-damage-card big-damage">
+          <div class="bt-damage-card big-damage${noAnim}">
             <div class="bt-damage-headline">⚠ 회피 실패!</div>
             <div class="bt-damage-detail">회피 ${b.defenseDice} (8 미만) → <strong class="bt-damage-num">${b.attackDice}</strong> 피해</div>
           </div>
@@ -8781,14 +8783,14 @@ function renderPvpBattle(modal, state) {
         const dmg = Math.max(0, b.attackDice - b.defenseDice);
         if (dmg === 0) {
           damageHTML = `
-            <div class="bt-damage-card no-damage">
+            <div class="bt-damage-card no-damage${noAnim}">
               <div class="bt-damage-headline">🛡 완전 차단!</div>
               <div class="bt-damage-detail">공격 ${b.attackDice} − 방어 ${b.defenseDice} = <strong>0</strong> 피해</div>
             </div>
           `;
         } else {
           damageHTML = `
-            <div class="bt-damage-card damage">
+            <div class="bt-damage-card damage${noAnim}">
               <div class="bt-damage-headline">⚔ ${dmg} 피해 적중</div>
               <div class="bt-damage-detail">공격 ${b.attackDice} − 방어 ${b.defenseDice} = <strong class="bt-damage-num">${dmg}</strong></div>
             </div>
@@ -8894,8 +8896,8 @@ function renderPvpBattle(modal, state) {
   }
 
   // 데미지 받은 행 흔들림 클래스
-  const opShake = b.phase === 'resolve' && b.pendingDamage > 0 && b.currentAttacker === state.mySlot ? ' bt-hp-hit' : '';
-  const meShake = b.phase === 'resolve' && b.pendingDamage > 0 && b.currentAttacker !== state.mySlot ? ' bt-hp-hit' : '';
+  const opShake = b.phase === 'resolve' && b.pendingDamage > 0 && b.currentAttacker === state.mySlot && !state.damageCardShown ? ' bt-hp-hit' : '';
+  const meShake = b.phase === 'resolve' && b.pendingDamage > 0 && b.currentAttacker !== state.mySlot && !state.damageCardShown ? ' bt-hp-hit' : '';
 
   modal.innerHTML = `
     <div class="maze-popup-head">
@@ -9258,6 +9260,15 @@ async function onUpDownFinish(state, reward) {
 async function startGame() {
   renderMain();
   await Backend.init();
+
+  // 미니게임/가이드 모달 감지 → body 스크롤 잠금
+  const observeModal = () => {
+    const hasModal = !!document.getElementById('minigame-modal') ||
+                     !!document.querySelector('.bt-guide-modal');
+    document.body.classList.toggle('modal-open', hasModal);
+  };
+  const modalObserver = new MutationObserver(observeModal);
+  modalObserver.observe(document.body, { childList: true, subtree: false });
 
   // 세션 시작 시각 기록 (이 이후의 강제 새로고침만 반응)
   const mySessionStartAt = Date.now();

@@ -2533,6 +2533,10 @@ body {
   pointer-events: none;
   background: radial-gradient(ellipse at center, rgba(255,215,0,0.4), rgba(255,68,68,0.3) 60%, rgba(0,0,0,0.5));
   animation: criticalOverlayFlash 1.1s ease-out forwards;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
 }
 @keyframes criticalOverlayFlash {
   0%   { opacity: 0; }
@@ -2542,15 +2546,13 @@ body {
   100% { opacity: 0; }
 }
 .critical-flash-text {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
   font-family: 'Courier New', monospace;
   font-size: 48px;
   font-weight: bold;
   letter-spacing: 6px;
   color: #ffd700;
+  text-align: center;
+  white-space: nowrap;
   text-shadow:
     0 0 12px #ff4444,
     0 0 32px #ff4444,
@@ -2559,11 +2561,11 @@ body {
   animation: criticalTextPulse 1.1s ease-out forwards;
 }
 @keyframes criticalTextPulse {
-  0%   { transform: translate(-50%, -50%) scale(0.3); opacity: 0; filter: blur(8px); }
-  20%  { transform: translate(-50%, -50%) scale(1.4); opacity: 1; filter: blur(0); }
-  40%  { transform: translate(-50%, -50%) scale(1.0); }
-  80%  { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
-  100% { transform: translate(-50%, -50%) scale(1.2); opacity: 0; }
+  0%   { transform: scale(0.3); opacity: 0; filter: blur(8px); }
+  20%  { transform: scale(1.4); opacity: 1; filter: blur(0); }
+  40%  { transform: scale(1.0); }
+  80%  { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1.2); opacity: 0; }
 }
 
 /* 치명타 다이스 강조 */
@@ -2827,8 +2829,22 @@ body {
   .bt-guide-section-text { font-size: 10.5px; }
 }
 
-/* BATTLE/PvP 모달이 떠 있을 때 body 스크롤 잠금 */
-body:has(#minigame-modal),
-body:has(.bt-guide-modal) {
+/* BATTLE/PvP 모달이 떠 있을 때 body 스크롤 잠금 (브라우저 호환) */
+body.modal-open {
   overflow: hidden;
+}
+
+/* 모달 자체 높이 더 여유 - 작은 화면에서 슬라이드바 안 생기게 */
+.maze-popup {
+  max-height: 88vh !important;
+}
+.maze-popup-body {
+  max-height: calc(88vh - 40px);
+  overflow-y: auto;
+}
+
+/* 데미지 카드 - 두 번째 render부터는 애니메이션 OFF (정적 표시) */
+.bt-damage-card.no-anim,
+.bt-damage-card.no-anim.big-damage {
+  animation: none !important;
 }
