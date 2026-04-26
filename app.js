@@ -3303,16 +3303,34 @@ function showSignalList(opts = {}) {
   const existing = document.getElementById('signal-list-modal');
   if (existing) { existing.remove(); return; }
 
-  const PER_PAGE = 4;
+  const PER_PAGE = 6;  // 4 → 6 페이지당 더 많이
   const page = opts.page ?? 0;
 
-  const signals = listActiveSignals(currentPet)
+  const allSignals = listActiveSignals(currentPet)
     .filter(s => !s.skipped);  // 시스템 활성화 전 스킵된 건 안 보임
 
-  if (signals.length === 0) {
+  if (allSignals.length === 0) {
     showToast('📡 아직 수신된 신호가 없습니다', 'system');
     return;
   }
+
+  // 상태별 카운트
+  const cntActive = allSignals.filter(s => !s.expired && !s.completedAt).length;
+  const cntCompleted = allSignals.filter(s => s.completedAt).length;
+  const cntExpired = allSignals.filter(s => s.expired && s.stage === 0).length;
+
+  // 정렬: 활성 > 해독 중 > 완료 > 만료
+  const signals = allSignals.sort((a, b) => {
+    const score = (s) => {
+      if (s.expired && s.stage === 0) return 0;
+      if (s.completedAt) return 1;
+      if (s.stage > 0) return 3;
+      return 2; // 미개봉
+    };
+    const sa = score(a), sb = score(b);
+    if (sa !== sb) return sb - sa;  // 높은 우선순위 먼저
+    return b.spawnedAt - a.spawnedAt;
+  });
 
   const totalPages = Math.max(1, Math.ceil(signals.length / PER_PAGE));
   const safePage = Math.min(page, totalPages - 1);
@@ -3327,27 +3345,50 @@ function showSignalList(opts = {}) {
       <span class="talk-close" id="signal-list-close">✕ 닫기</span>
     </div>
     <div class="talk-modal-body" style="display:block;padding:14px;">
-      <div style="color:#8fb39a;font-size:11px;margin-bottom:10px;">
-        수신된 신호 ${signals.length}개 · 24시간 내 해독하지 않으면 영구 소멸합니다.
+      <div style="color:#8fb39a;font-size:11px;margin-bottom:6px;line-height:1.6;">
+        총 <strong style="color:#03B352;">${allSignals.length}개</strong> 신호 ·
+        대기 ${cntActive} · 완료 ${cntCompleted} · 소멸 ${cntExpired}
       </div>
+      <div style="color:#666;font-size:10px;margin-bottom:10px;">
+        24시간 내 해독하지 않은 신호는 영구 소멸합니다.
+      </div>
+
+      ${totalPages > 1 ? `
+        <div style="color:#5fb37a;font-size:10px;margin-bottom:8px;text-align:center;
+          border:1px dotted #2d5a3e;padding:4px;background:#0a1410;">
+          📂 페이지 ${safePage + 1} / ${totalPages} (총 ${signals.length}개 중 ${safePage * PER_PAGE + 1}-${Math.min((safePage + 1) * PER_PAGE, signals.length)}번째 표시)
+        </div>
+      ` : ''}
+
       <div id="signal-list-items">
         ${slice.map(s => renderSignalListItem(s)).join('')}
       </div>
 
       ${totalPages > 1 ? `
-        <div style="display:flex;justify-content:center;align-items:center;gap:10px;
-          margin-top:14px;padding-top:10px;border-top:1px dotted #2d5a3e;font-size:11px;">
+        <div style="display:flex;justify-content:center;align-items:center;gap:6px;
+          margin-top:14px;padding-top:12px;border-top:1px dashed #2d5a3e;font-size:11px;
+          flex-wrap:wrap;">
+          <button class="signal-list-page" data-page="0"
+            ${safePage === 0 ? 'disabled' : ''}
+            style="background:transparent;border:1px solid ${safePage === 0 ? '#2d5a3e' : '#5fb37a'};
+            color:${safePage === 0 ? '#333' : '#5fb37a'};padding:6px 10px;font-family:inherit;font-size:11px;
+            cursor:${safePage === 0 ? 'not-allowed' : 'pointer'};">⏮ 처음</button>
           <button class="signal-list-page" data-page="${safePage - 1}"
             ${safePage === 0 ? 'disabled' : ''}
             style="background:transparent;border:1px solid ${safePage === 0 ? '#2d5a3e' : '#5fb37a'};
-            color:${safePage === 0 ? '#333' : '#5fb37a'};padding:5px 14px;font-family:inherit;font-size:11px;
+            color:${safePage === 0 ? '#333' : '#5fb37a'};padding:6px 14px;font-family:inherit;font-size:11px;
             cursor:${safePage === 0 ? 'not-allowed' : 'pointer'};">◀ 이전</button>
-          <span style="color:#8fb39a;">${safePage + 1} / ${totalPages}</span>
+          <span style="color:#03B352;font-weight:bold;padding:0 8px;">${safePage + 1} / ${totalPages}</span>
           <button class="signal-list-page" data-page="${safePage + 1}"
             ${safePage >= totalPages - 1 ? 'disabled' : ''}
             style="background:transparent;border:1px solid ${safePage >= totalPages - 1 ? '#2d5a3e' : '#5fb37a'};
-            color:${safePage >= totalPages - 1 ? '#333' : '#5fb37a'};padding:5px 14px;font-family:inherit;font-size:11px;
+            color:${safePage >= totalPages - 1 ? '#333' : '#5fb37a'};padding:6px 14px;font-family:inherit;font-size:11px;
             cursor:${safePage >= totalPages - 1 ? 'not-allowed' : 'pointer'};">다음 ▶</button>
+          <button class="signal-list-page" data-page="${totalPages - 1}"
+            ${safePage >= totalPages - 1 ? 'disabled' : ''}
+            style="background:transparent;border:1px solid ${safePage >= totalPages - 1 ? '#2d5a3e' : '#5fb37a'};
+            color:${safePage >= totalPages - 1 ? '#333' : '#5fb37a'};padding:6px 10px;font-family:inherit;font-size:11px;
+            cursor:${safePage >= totalPages - 1 ? 'not-allowed' : 'pointer'};">마지막 ⏭</button>
         </div>
       ` : ''}
     </div>

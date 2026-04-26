@@ -2900,3 +2900,19 @@ body.modal-open {
 .emoji-reaction-float.emoji-sad   { color: #7d9cb3; border-color: #5a8099; box-shadow: 0 0 12px rgba(125,156,179,0.4); }
 .emoji-reaction-float.emoji-shock { color: #c9a8e0; border-color: #a87dc9; box-shadow: 0 0 12px rgba(168,125,201,0.4); }
 .emoji-reaction-float.emoji-angry { color: #e8956f; border-color: #c97d5f; box-shadow: 0 0 12px rgba(201,125,95,0.4); }
+
+/* 신호 아카이브 모달 - 목록이 길어도 화면 안 넘치게 */
+#signal-list-modal {
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+#signal-list-modal .talk-modal-head {
+  flex-shrink: 0;
+}
+#signal-list-modal .talk-modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: block !important;  /* grid 무시, 일반 흐름 */
+}
