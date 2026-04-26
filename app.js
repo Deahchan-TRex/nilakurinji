@@ -273,6 +273,25 @@ function renderMain() {
 // ────────────────────────────────────────────────────────────
 // 명령 버튼
 // ────────────────────────────────────────────────────────────
+/**
+ * SIGNAL 버튼 펄스 토글 - render()에서 매번 호출
+ * 활성 신호(미해독, 미만료) 있으면 .signal-pulse 추가
+ */
+function updateSignalPulse() {
+  if (!currentPet) return;
+  const sigBtn = document.querySelector('button[data-act="signal"]');
+  if (!sigBtn) return;
+  const hasActive = currentPet.signals
+    && Object.values(currentPet.signals).some(s =>
+      s && !s.skipped && !s.expired && !s.completedAt
+    );
+  if (hasActive) {
+    sigBtn.classList.add('signal-pulse');
+  } else {
+    sigBtn.classList.remove('signal-pulse');
+  }
+}
+
 function renderCommandButtons() {
   const mainCmds = document.getElementById('cmds-main');
   const adminCmds = document.getElementById('cmds-admin');
@@ -390,6 +409,7 @@ function renderCommandButtons() {
           <button class="cmd admin" data-act="minigame">🎯 GAME</button>
           <button class="cmd admin" data-act="pending">💭 말함</button>
           <button class="cmd admin" data-act="radio-test">📻 라디오 테스트</button>
+          <button class="cmd admin" data-act="radio-broadcast">📡 모든 크루에게 라디오 발사</button>
           <button class="cmd admin" data-act="noise-test">⚡ 노이즈 테스트</button>
         `,
       },
@@ -467,6 +487,7 @@ function renderCommandButtons() {
       else if (act === 'minigame') showMinigameHub();
       else if (act === 'pending') showPendingQuestions();
       else if (act === 'radio-test') testRadioPopup();
+      else if (act === 'radio-broadcast') broadcastRadioToAllCrew();
       else if (act === 'noise-test') triggerNoiseEffect();
       else if (act === 'finale') {
         // 이미 봉인된 경우 편지 보기, 아니면 답장 UI
@@ -907,6 +928,9 @@ function render() {
 
   // 라디오 신호 아이콘 (활성 이벤트 있을 때만 표시)
   renderRadioIcon();
+
+  // SIGNAL 버튼 펄스 토글 (활성 신호 있을 때)
+  updateSignalPulse();
 
   // 단계별 태그
   const stageTags = {
@@ -5449,13 +5473,38 @@ async function radioTick() {
     return;
   }
 
-  // 크루별 마지막 라디오 시각 (localStorage)
-  const RADIO_INTERVAL_MS = 60 * 60 * 1000;  // 1시간
+  // 1) OBJECT 브로드캐스트 체크 (1시간 쿨다운 무시)
+  const bcast = currentPet.adminRadioBroadcast;
+  if (bcast && bcast.id && bcast.windowEnd > Date.now()) {
+    const seenKey = `radioBcastSeen_${currentUser.name}`;
+    const lastSeenId = localStorage.getItem(seenKey) || '';
+    if (lastSeenId !== bcast.id) {
+      // 이 크루가 아직 안 받은 브로드캐스트
+      localStorage.setItem(seenKey, bcast.id);
+      const event = {
+        scheduledAt: bcast.sentAt,
+        windowEnd: bcast.windowEnd,
+        channelId: bcast.channelId,
+        freq: bcast.freq,
+        popped: false,
+        matched: false,
+        missed: false,
+        isLocal: true,
+        isBroadcast: true,
+      };
+      radioLocalEvent = event;
+      openRadioPopup(event);
+      console.log('[radio] 브로드캐스트 수신 - 주파수:', bcast.freq);
+      return;  // 이번 틱은 종료
+    }
+  }
+
+  // 2) 일반 1시간 쿨다운 라디오
+  const RADIO_INTERVAL_MS = 60 * 60 * 1000;
   const storageKey = `radioLastFiredAt_${currentUser.name}`;
   const lastFired = parseInt(localStorage.getItem(storageKey) || '0');
   const now = Date.now();
 
-  // 첫 로그인이면 30분 후부터 첫 발사 (즉시 안 뜨게)
   if (lastFired === 0) {
     localStorage.setItem(storageKey, String(now - RADIO_INTERVAL_MS / 2));
     return;
@@ -5466,7 +5515,6 @@ async function radioTick() {
     return;
   }
 
-  // 1시간 경과 → 새 라디오 이벤트 발사
   fireLocalRadioEvent();
   localStorage.setItem(storageKey, String(now));
 }
@@ -5518,6 +5566,46 @@ function testRadioPopup() {
   radioTestActiveEvent = fakeEvent;  // 전역 보관 (아이콘에서 참조)
   openRadioPopup(fakeEvent);
   console.log('[radio] 테스트 팝업 - 정답 주파수:', freq, '/ 채널:', channel.label);
+}
+
+/**
+ * OBJECT가 모든 크루에게 라디오 신호 일괄 발송
+ * - pet.adminRadioBroadcast 필드에 이벤트 정보 저장
+ * - 각 크루가 onPetChange 받을 때 처리 (한 번만)
+ */
+async function broadcastRadioToAllCrew() {
+  if (!currentUser?.isAdmin) return;
+  if (!confirm('📡 모든 크루(TEEN/ADULT)에게 라디오 신호를 즉시 발사합니다.\n\n각 크루의 1시간 쿨다운을 무시하고 본인 화면에 라디오 팝업이 뜹니다. 계속할까요?')) return;
+
+  const cfg = CONFIG.RADIO_CONFIG;
+  const channel = cfg.CHANNELS[Math.floor(Math.random() * cfg.CHANNELS.length)];
+  const freq = 10 + Math.floor(Math.random() * 80);
+  const now = Date.now();
+  const broadcastId = `bcast_${now}`;
+
+  // pet에 broadcast 트리거 저장
+  currentPet.adminRadioBroadcast = {
+    id: broadcastId,
+    sentAt: now,
+    channelId: channel.id,
+    freq,
+    windowEnd: now + cfg.WINDOW_HOURS * 3600 * 1000,
+  };
+
+  try {
+    await Backend.savePet(currentPet);
+    await Backend.addLog({
+      user: currentUser.name, action: 'RADIO',
+      text: `📡 [관리자] 모든 크루에게 라디오 신호 발사: ${channel.label} (주파수 ${freq})`,
+      type: 'admin',
+      viewer: currentUser.name,
+    });
+    showToast(`📡 라디오 발사 완료 (주파수: ${freq})`, 'personality');
+    console.log('[radio] 브로드캐스트 - 정답:', freq, '/ 채널:', channel.label);
+  } catch (err) {
+    console.error('[radio] 브로드캐스트 실패:', err);
+    showToast('⚠ 발사 실패', 'warn');
+  }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -5730,6 +5818,64 @@ function bjPickBluffMode() {
 
 function bjPickFromPool(pool) {
   return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * 블러프 모드 시 행동 확인 팝업
+ * @param {string} action - '히트' or '스탠드'
+ * @param {string} marsLine - MARS II의 현재 어필 대사
+ * @returns {Promise<boolean>}
+ */
+function bjConfirmAction(action, marsLine) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.id = 'bj-confirm-overlay';
+    overlay.style.cssText = `
+      position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 10001;
+      display: flex; align-items: center; justify-content: center;
+    `;
+    overlay.innerHTML = `
+      <div style="background: #050a07; border: 1px solid #5fb37a;
+        box-shadow: 0 0 24px rgba(3,179,82,0.3); padding: 18px;
+        max-width: 360px; width: 92vw; font-family: 'Courier New', monospace; color: #c9c9c9;">
+        <div style="color: #e8a853; font-size: 12px; margin-bottom: 10px; letter-spacing: 1px;">
+          &gt; ${action.toUpperCase()} 확정?
+        </div>
+        <div style="color: #8fb39a; font-size: 11px; margin-bottom: 14px; line-height: 1.6;">
+          MARS II가 말했습니다:<br>
+          <span style="color: #c9c9c9; font-style: italic;">"${marsLine || '...'}"</span>
+        </div>
+        <div style="color: #6b8f76; font-size: 10px; margin-bottom: 14px;">
+          정말 ${action} 하시겠습니까?
+        </div>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <button id="bj-confirm-no" style="
+            background: transparent; border: 1px solid #666; color: #888;
+            padding: 6px 16px; font-family: inherit; font-size: 11px; cursor: pointer;">
+            아니, 잠깐
+          </button>
+          <button id="bj-confirm-yes" style="
+            background: #0a3818; border: 1px solid #03B352; color: #03B352;
+            padding: 6px 16px; font-family: inherit; font-size: 11px; cursor: pointer;
+            font-weight: bold;">
+            ${action} 한다
+          </button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const close = (ok) => {
+      overlay.remove();
+      resolve(ok);
+    };
+    overlay.querySelector('#bj-confirm-yes').addEventListener('click', () => close(true));
+    overlay.querySelector('#bj-confirm-no').addEventListener('click', () => close(false));
+    // 바깥 클릭 시 취소
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close(false);
+    });
+  });
 }
 
 /**
@@ -5979,6 +6125,11 @@ function attachBlackjackHandlers(modal, state) {
 
   document.getElementById('bj-hit')?.addEventListener('click', async () => {
     if (state.animating || state.phase !== 'player') return;
+    // 블러프 모드일 때 확인 팝업 (긴장 추가용)
+    if (state.bluffMode === 'bluff') {
+      const ok = await bjConfirmAction('히트', state.currentLine);
+      if (!ok) return;
+    }
     state.animating = true;
     state.player.push(state.deck.pop());
     const pv = bjHandValue(state.player);
@@ -6003,6 +6154,11 @@ function attachBlackjackHandlers(modal, state) {
 
   document.getElementById('bj-stand')?.addEventListener('click', async () => {
     if (state.animating || state.phase !== 'player') return;
+    // 블러프 모드일 때 확인 팝업
+    if (state.bluffMode === 'bluff') {
+      const ok = await bjConfirmAction('스탠드', state.currentLine);
+      if (!ok) return;
+    }
     state.animating = true;
     state.phase = 'dealer';
     state.hideDealer = false;
@@ -6024,6 +6180,9 @@ function attachBlackjackHandlers(modal, state) {
 }
 
 async function bjDealerTurn(state) {
+  // 결과 페이즈 진입 - 딜러 카드 공개 보장
+  state.hideDealer = false;
+
   // 딜러는 17 이상까지 히트
   while (bjHandValue(state.dealer) < 17) {
     await new Promise(r => setTimeout(r, 400));
@@ -6055,7 +6214,7 @@ async function onBlackjackFinish(state) {
 
   // 테스트 모드: 저장 스킵
   if (isMinigameTestMode()) {
-    state.rewardText = `(테스트 · ${JSON.stringify(reward).slice(0, 40)}...)`;
+    state.rewardText = '(테스트 모드 · 저장 안 됨)';
     return;
   }
 
@@ -6323,7 +6482,7 @@ async function onTicTacToeFinish(state) {
   if (!reward) return;
 
   if (isMinigameTestMode()) {
-    state.rewardText = `(테스트 · ${JSON.stringify(reward).slice(0, 40)}...)`;
+    state.rewardText = '(테스트 모드 · 저장 안 됨)';
     return;
   }
 
