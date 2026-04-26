@@ -7931,6 +7931,7 @@ async function handleBattlePreroll(modal, state) {
   state.defenseDice = null;
   state.defenseAction = null;
   state.attackCritical = false;
+  state.cheer = null;
   state.damageResolved = false;
   state.defenseCritical = false;
   state.crewPreroll = null;
@@ -8002,12 +8003,12 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
 
   await new Promise(r2 => setTimeout(r2, 700));
 
-  // 3) 데미지 계산 + 카드 표시
+  // 3) 데미지 계산 + HP 감소 + 데미지 카드 + 대사 (모두 동시 1회)
   resolveBattleAttack(state, 'crew');
   playSfx(state.pendingDamage > 0 ? 'happy' : 'cute');
 
-  // MARS II 리액션 - 자기가 데미지 얼마나 받았는지에 따라
-  if (Math.random() < 0.6) {
+  // MARS II 리액션 (한 번만 결정)
+  if (Math.random() < 0.7) {
     let kind;
     if (state.pendingDamage === 0) {
       kind = state.defenseAction === 'dodge' ? 'mars_dodge' : 'mars_block';
@@ -8018,22 +8019,18 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
     }
     state.cheer = pickMarsCheer(kind, currentUser.name);
   }
-  renderBattle(modal, state);
-  attachBattleHandlers(modal, state);
 
-  await new Promise(r3 => setTimeout(r3, 700));
-
-  // 4) 데미지 팝업 + HP 깎기 (동시에)
-  spawnDamagePopup(modal, 'mars', state.pendingDamage);
+  // HP 즉시 감소
   state.marsHp = Math.max(0, state.marsHp - state.pendingDamage);
-  state.damageResolved = true;  // 데미지 카드 더 이상 표시 안 함
+  // 한 번만 render: 데미지 카드 + HP 흔들림 + 대사 모두 동시 등장
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
+  // 데미지 팝업 (-N 떠오름)도 동시에
+  if (state.pendingDamage > 0) {
+    spawnDamagePopup(modal, 'mars', state.pendingDamage);
+  }
 
-  // 튜토리얼: 첫 데미지 후 damage 안내
-  await new Promise(r4 => setTimeout(r4, 1100));
-
-  // 5) pendingDamage 정리
+  await new Promise(r3 => setTimeout(r3, 1500));
 
   // 종료 체크
   if (state.marsHp <= 0) {
@@ -8052,6 +8049,7 @@ async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
   state.defenseDice = null;
   state.defenseAction = null;
   state.attackCritical = false;
+  state.cheer = null;
   state.damageResolved = false;
   state.defenseCritical = false;
   state.pendingDamage = 0;
@@ -8130,12 +8128,12 @@ async function handleBattleCrewDefense(modal, state, defAction) {
   attachBattleHandlers(modal, state);
   await new Promise(r => setTimeout(r, 700));
 
-  // 2) 데미지 계산 + 카드 표시
+  // 2) 데미지 계산 + HP 감소 + 카드 + 대사 (모두 동시 1회)
   resolveBattleAttack(state, 'mars');
   playSfx(state.pendingDamage > 0 ? 'angry' : 'cute');
 
-  // MARS II 리액션 - 크루가 데미지 받았는지에 따라
-  if (Math.random() < 0.6) {
+  // MARS II 리액션 (한 번만 결정)
+  if (Math.random() < 0.7) {
     let kind;
     if (state.pendingDamage === 0) {
       kind = state.defenseAction === 'dodge' ? 'crew_dodge' : 'crew_block';
@@ -8146,19 +8144,18 @@ async function handleBattleCrewDefense(modal, state, defAction) {
     }
     state.cheer = pickMarsCheer(kind, currentUser.name);
   }
-  renderBattle(modal, state);
-  attachBattleHandlers(modal, state);
 
-  await new Promise(r => setTimeout(r, 700));
-
-  // 3) 데미지 팝업 + HP 깎기
-  spawnDamagePopup(modal, 'crew', state.pendingDamage);
+  // HP 즉시 감소
   state.crewHp = Math.max(0, state.crewHp - state.pendingDamage);
-  state.damageResolved = true;
+  // 한 번만 render: 데미지 카드 + HP 흔들림 + 대사 동시
   renderBattle(modal, state);
   attachBattleHandlers(modal, state);
+  // 데미지 팝업 동시
+  if (state.pendingDamage > 0) {
+    spawnDamagePopup(modal, 'crew', state.pendingDamage);
+  }
 
-  await new Promise(r => setTimeout(r, 1100));
+  await new Promise(r => setTimeout(r, 1500));
 
   // 종료 체크
   if (state.crewHp <= 0) {
@@ -8177,6 +8174,7 @@ async function handleBattleCrewDefense(modal, state, defAction) {
   state.defenseDice = null;
   state.defenseAction = null;
   state.attackCritical = false;
+  state.cheer = null;
   state.damageResolved = false;
   state.defenseCritical = false;
   state.pendingDamage = 0;
@@ -8584,24 +8582,20 @@ function showPvpBattle(battleId) {
       }
     }
 
-    // 데미지 발생 시 (resolve 페이즈 진입) 팝업 + HP 흔들림
+    // 데미지 발생 시 (resolve 페이즈 진입) 팝업 + HP 흔들림 모두 동시
     if (b.phase === 'resolve' && prev?.phase !== 'resolve' && b.pendingDamage !== undefined) {
       const defenderSlot = b.currentAttacker === 'p1' ? 'p2' : 'p1';
       const target = defenderSlot === state.mySlot ? 'crew' : 'mars';
-      setTimeout(() => spawnDamagePopup(modal, target, b.pendingDamage), 100);
+      // 팝업 즉시 (render 직후)
+      if (b.pendingDamage > 0) {
+        setTimeout(() => spawnDamagePopup(modal, target, b.pendingDamage), 50);
+      }
       playSfx(b.pendingDamage > 0 ? (target === 'crew' ? 'angry' : 'happy') : 'cute');
 
-      // 종료 아니면 자동 진행 예약 (중복 방지)
+      // 종료 아니면 자동 진행 예약
       if (b.status !== 'done' && !state.advanceScheduled) {
         state.advanceScheduled = true;
-        // 700ms 후 데미지 카드 숨기기 (HP 깎이는 시점과 맞춤)
-        setTimeout(() => {
-          state.damageCardShown = true;
-          renderPvpBattle(modal, state);
-          attachPvpBattleHandlers(modal, state);
-        }, 700);
         setTimeout(async () => {
-          // 공격자 한 명만 advance 호출 (중복 트랜잭션 방지)
           if (state.battle?.phase === 'resolve' && state.battle?.currentAttacker === state.mySlot) {
             try { await Backend.advancePvpRound(battleId); } catch (e) {}
           }
@@ -9266,6 +9260,7 @@ async function startGame() {
     const hasModal = !!document.getElementById('minigame-modal') ||
                      !!document.querySelector('.bt-guide-modal');
     document.body.classList.toggle('modal-open', hasModal);
+    document.documentElement.classList.toggle('modal-open', hasModal);
   };
   const modalObserver = new MutationObserver(observeModal);
   modalObserver.observe(document.body, { childList: true, subtree: false });

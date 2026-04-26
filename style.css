@@ -2829,18 +2829,28 @@ body {
   .bt-guide-section-text { font-size: 10.5px; }
 }
 
-/* BATTLE/PvP 모달이 떠 있을 때 body 스크롤 잠금 (브라우저 호환) */
+/* BATTLE/PvP 모달이 떠 있을 때 body/html 모두 스크롤 잠금 */
+html.modal-open,
 body.modal-open {
-  overflow: hidden;
+  overflow: hidden !important;
+  height: 100% !important;
+  position: relative;
 }
 
-/* 모달 자체 높이 더 여유 - 작은 화면에서 슬라이드바 안 생기게 */
+/* 모달 자체 높이 - 작은 화면에서 슬라이드바 안 생기게 */
 .maze-popup {
-  max-height: 88vh !important;
+  max-height: 85vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;  /* 모달 자체엔 스크롤 X */
+}
+.maze-popup-head {
+  flex-shrink: 0 !important;
 }
 .maze-popup-body {
-  max-height: calc(88vh - 40px);
-  overflow-y: auto;
+  flex: 1 1 auto !important;
+  overflow-y: auto !important;  /* 내부 body만 스크롤 */
+  -webkit-overflow-scrolling: touch;
 }
 
 /* 데미지 카드 - 두 번째 render부터는 애니메이션 OFF (정적 표시) */
