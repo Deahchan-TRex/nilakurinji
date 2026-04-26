@@ -290,9 +290,15 @@ function renderCommandButtons() {
   if (!currentUser.isAdmin) {
     const stage = currentPet?.stage;
     const showLore = (stage !== 'TEEN' && stage !== 'ADULT');
+    // 진행 중인 신호 (해독 진행 중, 미완료/미만료) 있으면 펄스 클래스
+    const hasActiveSignal = currentPet?.signals
+      && Object.values(currentPet.signals).some(s =>
+        s && !s.skipped && !s.completedAt && !s.expiredAt
+      );
+    const signalCls = hasActiveSignal ? ' signal-pulse' : '';
     if (showLore) {
       adminCmds.innerHTML = `
-        <button class="cmd" data-act="signal" style="grid-column: span 2;">SIGNAL</button>
+        <button class="cmd${signalCls}" data-act="signal" style="grid-column: span 2;">SIGNAL</button>
         <button class="cmd" data-act="minigame" style="grid-column: span 2;">GAME</button>
         <button class="cmd" data-act="pending" style="grid-column: span 2;">말함</button>
         <button class="cmd" data-act="lore">LORE</button>
@@ -301,7 +307,7 @@ function renderCommandButtons() {
     } else {
       // TEEN/ADULT: LORE 제거
       adminCmds.innerHTML = `
-        <button class="cmd" data-act="signal" style="grid-column: span 2;">SIGNAL</button>
+        <button class="cmd${signalCls}" data-act="signal" style="grid-column: span 2;">SIGNAL</button>
         <button class="cmd" data-act="minigame" style="grid-column: span 2;">GAME</button>
         <button class="cmd" data-act="pending">말함</button>
         <button class="cmd" data-act="logout">LOGOUT</button>
@@ -639,7 +645,7 @@ async function savePendingQuestion(raw) {
     // 공용 로그
     await Backend.addLog({
       user: currentUser.name, action: 'MSG',
-      text: `◎ "${text.slice(0, 30)}${text.length > 30 ? '...' : ''}" 남김`,
+      text: `◎ "${text.slice(0, 80)}${text.length > 80 ? '...' : ''}" 남김`,
       type: 'system',
     });
     appendSystemLog(`◎ 질문이 기록되었어. 언젠가 답이 돌아올지도 몰라.`, 'personality');
@@ -935,12 +941,17 @@ function render() {
       </div>
     `;
   } else {
-    // 다음 단계까지 남은 시간 계산
+    // 다음 단계까지 남은 시간 계산 (분 단위까지)
     const hoursLived = Math.max(0, (Date.now() - currentPet.bornAt) / 3600000);
     const stageInfo = CONFIG.STAGES.find(s => s.name === currentPet.stage);
     const nextStageInfo = stageInfo ? CONFIG.STAGES.find(s => s.fromHour === stageInfo.toHour) : null;
     const hoursToNext = stageInfo ? Math.max(0, stageInfo.toHour - hoursLived) : 0;
     const nextStageName = nextStageInfo?.name || null;
+    const wholeHours = Math.floor(hoursToNext);
+    const remainMinutes = Math.floor((hoursToNext - wholeHours) * 60);
+    const remainLabel = wholeHours > 0
+      ? `${wholeHours}h ${remainMinutes}m`
+      : `${remainMinutes}m`;
 
     document.getElementById('pet-extras').innerHTML = `
       <div class="kv-row"><span class="k">STRENGTH</span><span class="v hl">${Math.round(currentPet.strength)}</span></div>
@@ -949,7 +960,7 @@ function render() {
       <div class="kv-row"><span class="k">LEVEL</span><span class="v">${currentPet.level || 1}</span></div>
       ${nextStageName ? `
         <div class="kv-row divider-top"><span class="k">→ ${nextStageName}</span>
-          <span class="v" style="color:#e8a853;">${Math.floor(hoursToNext)}h</span>
+          <span class="v" style="color:#e8a853;">${remainLabel}</span>
         </div>
       ` : ''}
       <div class="kv-row ${nextStageName ? '' : 'divider-top'}"><span class="k">REVIVE</span>
@@ -1050,9 +1061,12 @@ function render() {
   let newestAt = lastShownAt;
 
   // 개인용 archive 필터링: viewer 필드가 없거나 본인인 것만
-  const visibleLogs = logs.filter(l =>
-    !l.viewer || l.viewer === currentUser.name
-  );
+  // 추가: MSG 액션 로그는 OBJECT(관리자)만 보임 (펜딩 추적 도구)
+  const visibleLogs = logs.filter(l => {
+    if (l.viewer && l.viewer !== currentUser.name) return false;
+    if (l.action === 'MSG' && !currentUser.isAdmin) return false;
+    return true;
+  });
 
   logBody.innerHTML = visibleLogs.length
     ? visibleLogs.map(l => {
@@ -3884,10 +3898,13 @@ async function scheduleSignalFire(sigDef, fireAt, label) {
  * 관리자 신호 제어 패널
  * - 다음 신호 발사 / 발사 예약 / 모든 신호 진행 상태 / 강제 만료 / 재시작
  */
-function showSignalAdminPanel() {
+function showSignalAdminPanel(opts = {}) {
   if (!currentUser?.isAdmin) return;
   const existing = document.getElementById('signal-admin-modal');
   if (existing) { existing.remove(); return; }
+
+  const PER_PAGE = 4;
+  const firedPage = opts.firedPage ?? 0;
 
   // 다음 발사 후보 = triggerHour 순으로 정렬 후 첫 번째 미발사 (FINALE 제외)
   const signals = currentPet.signals || {};
@@ -3908,6 +3925,9 @@ function showSignalAdminPanel() {
     .map(s => ({ ...s, def: CONFIG.SIGNALS.find(d => d.id === s.id) }))
     .filter(s => s.def)
     .sort((a, b) => b.spawnedAt - a.spawnedAt);
+
+  const firedTotalPages = Math.max(1, Math.ceil(fired.length / PER_PAGE));
+  const firedSlice = fired.slice(firedPage * PER_PAGE, (firedPage + 1) * PER_PAGE);
 
   const modal = document.createElement('div');
   modal.id = 'signal-admin-modal';
@@ -4017,7 +4037,23 @@ function showSignalAdminPanel() {
           <div style="color:#666;font-size:11px;text-align:center;padding:14px 0;">
             아직 발사된 신호가 없습니다
           </div>
-        ` : fired.map(s => renderSignalAdminRow(s)).join('')}
+        ` : firedSlice.map(s => renderSignalAdminRow(s)).join('')}
+
+        ${firedTotalPages > 1 ? `
+          <div style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:10px;font-size:11px;">
+            <button class="sig-page-btn" data-page="${firedPage - 1}"
+              ${firedPage === 0 ? 'disabled' : ''}
+              style="background:transparent;border:1px solid ${firedPage === 0 ? '#2d5a3e' : '#5fb37a'};
+              color:${firedPage === 0 ? '#333' : '#5fb37a'};padding:4px 10px;font-family:inherit;
+              cursor:${firedPage === 0 ? 'not-allowed' : 'pointer'};">◀ 이전</button>
+            <span style="color:#8fb39a;">${firedPage + 1} / ${firedTotalPages}</span>
+            <button class="sig-page-btn" data-page="${firedPage + 1}"
+              ${firedPage >= firedTotalPages - 1 ? 'disabled' : ''}
+              style="background:transparent;border:1px solid ${firedPage >= firedTotalPages - 1 ? '#2d5a3e' : '#5fb37a'};
+              color:${firedPage >= firedTotalPages - 1 ? '#333' : '#5fb37a'};padding:4px 10px;font-family:inherit;
+              cursor:${firedPage >= firedTotalPages - 1 ? 'not-allowed' : 'pointer'};">다음 ▶</button>
+          </div>
+        ` : ''}
       </div>
 
     </div>
@@ -4030,6 +4066,16 @@ function showSignalAdminPanel() {
 
   // 이벤트 핸들러
   document.getElementById('sigadmin-close').addEventListener('click', () => modal.remove());
+
+  // 페이지 이동
+  modal.querySelectorAll('.sig-page-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      const page = parseInt(btn.dataset.page);
+      modal.remove();
+      setTimeout(() => showSignalAdminPanel({ firedPage: page }), 50);
+    });
+  });
 
   // 드롭다운에서 선택한 신호 우선, 없으면 next 사용
   const getSelectedSignal = () => {
@@ -4884,6 +4930,11 @@ let radioTestMode = false;
  * 팝업 닫아도 유지되어 아이콘 재오픈 테스트 가능
  */
 let radioTestActiveEvent = null;
+/**
+ * 일반 모드의 로컬 라디오 이벤트 (크루별 1시간 1번)
+ * pet.radioSchedule 사용 안 함 - localStorage 쿨다운 + 화면 메모리만
+ */
+let radioLocalEvent = null;
 
 function isRadioTestMode() {
   return currentUser?.isAdmin && radioTestMode;
@@ -5259,6 +5310,10 @@ async function onRadioMatched(state, event, channel, modal) {
         radioTestMode = false;
         radioTestActiveEvent = null;
       }
+      // 로컬 이벤트 매칭 완료 → 지움
+      if (event.isLocal) {
+        radioLocalEvent = null;
+      }
       render();
     });
   }
@@ -5266,7 +5321,24 @@ async function onRadioMatched(state, event, channel, modal) {
   // 테스트 모드: 저장 안 함
   if (isRadioTestMode()) return;
 
-  // 실제 보상 적용
+  // 로컬 이벤트: pet에 보상 직접 적용 (resolveRadioEvent는 글로벌 스케줄용이라 not found 됨)
+  if (event.isLocal) {
+    radioLocalEvent.matched = true;
+    try {
+      // 보상 적용 (savePet 트랜잭션 내에서 처리하기 위해 임시 함수 호출)
+      await applyRadioRewardLocal(channel.reward, channel.story);
+      await Backend.addLog({
+        user: currentUser.name, action: 'RADIO',
+        text: `◆ 주파수 포착: ${channel.label}`,
+        type: 'epic',
+      });
+    } catch (err) {
+      console.error('[radio] 로컬 보상 적용 실패:', err);
+    }
+    return;
+  }
+
+  // 글로벌 스케줄 이벤트 (legacy, 사용 안 됨)
   try {
     await Backend.resolveRadioEvent(event.scheduledAt, 'matched', channel.reward);
     // 아이 대사 공용으로
@@ -5284,6 +5356,23 @@ async function onRadioMatched(state, event, channel, modal) {
 }
 
 /**
+ * 로컬 라디오 보상 - pet에 직접 적용 (트랜잭션)
+ */
+async function applyRadioRewardLocal(reward, storyText) {
+  // 트랜잭션 사용해서 안전하게 보상 적용 + 공용 대사 저장
+  // resolveRadioEvent의 보상 적용 로직 재사용 (scheduledAt 매칭 실패해도 보상은 안전)
+  // 직접 pet 저장은 race condition 위험 → savePet 호출 X, 대신 새 트랜잭션 함수 사용
+  if (!reward) return;
+  try {
+    // pet의 personality 등 안전하게 머지하는 트랜잭션
+    await Backend.applyRadioReward(reward, storyText);
+  } catch (err) {
+    console.error('[radio] applyRadioReward 실패:', err);
+    throw err;
+  }
+}
+
+/**
  * ASCII 옆 라디오 신호 아이콘 (실수로 닫았거나 미처리 시)
  * render()에서 호출됨
  */
@@ -5291,12 +5380,18 @@ function renderRadioIcon() {
   const container = document.getElementById('radio-icon-slot');
   if (!container) return;
 
-  // 테스트 모드: 전역 테스트 이벤트 우선
+  // 우선순위: 테스트 모드 > 로컬 이벤트
   let ev;
   if (isRadioTestMode() && radioTestActiveEvent) {
     ev = radioTestActiveEvent;
-  } else if (!isRadioTestMode()) {
-    ev = findActiveRadioEvent();
+  } else if (!isRadioTestMode() && radioLocalEvent) {
+    // 로컬 이벤트 만료 체크
+    if (radioLocalEvent.windowEnd < Date.now() || radioLocalEvent.matched) {
+      radioLocalEvent = null;
+      ev = null;
+    } else {
+      ev = radioLocalEvent;
+    }
   }
 
   if (!ev || currentRadioPopup === ev.scheduledAt) {
@@ -5314,9 +5409,9 @@ function renderRadioIcon() {
   `;
   const iconEl = document.getElementById('radio-icon-wrapper');
   iconEl?.addEventListener('click', () => {
-    const activeEv = (isRadioTestMode() && radioTestActiveEvent)
-      ? radioTestActiveEvent
-      : findActiveRadioEvent();
+    let activeEv;
+    if (isRadioTestMode() && radioTestActiveEvent) activeEv = radioTestActiveEvent;
+    else if (radioLocalEvent) activeEv = radioLocalEvent;
     if (activeEv) openRadioPopup(activeEv);
   });
   // 테스트 모드: 우클릭으로 테스트 종료
@@ -5332,8 +5427,10 @@ function renderRadioIcon() {
 }
 
 /**
- * 라디오 틱 - 주기적 호출 (5초마다)
- * - 스케줄 확인, 만료 처리, 새 팝업 자동 오픈
+ * 라디오 틱 - 주기적 호출 (1분마다)
+ * - 크루별로 1시간에 1번 라디오 이벤트 발생
+ * - localStorage에 크루별 마지막 발사 시각 저장 (다른 크루 영향 없음)
+ * - pet.radioSchedule (글로벌 스케줄) 무시 - 더 이상 사용 안 함
  */
 async function radioTick() {
   if (!currentPet || currentPet.isDead) return;
@@ -5343,23 +5440,58 @@ async function radioTick() {
   // 테스트 모드는 자동 틱 건너뜀 (수동 호출만)
   if (isRadioTestMode()) return;
 
-  // 스케줄 갱신 (하루 1회)
-  await ensureRadioSchedule();
-
-  // 만료 처리
-  await processExpiredRadioEvents();
-
-  // 활성 이벤트 있으면 팝업 자동 오픈 (아직 안 열린 경우)
-  const activeEv = findActiveRadioEvent();
-  if (activeEv && currentRadioPopup !== activeEv.scheduledAt) {
-    const isOpen = document.getElementById('radio-popup');
-    if (!isOpen) {
-      openRadioPopup(activeEv);
-    }
+  // 이미 팝업 열려있으면 새로 발사 안 함
+  const isPopupOpen = document.getElementById('radio-popup');
+  if (isPopupOpen) {
+    renderRadioIcon();
+    return;
   }
 
-  // 아이콘 갱신
-  renderRadioIcon();
+  // 크루별 마지막 라디오 시각 (localStorage)
+  const RADIO_INTERVAL_MS = 60 * 60 * 1000;  // 1시간
+  const storageKey = `radioLastFiredAt_${currentUser.name}`;
+  const lastFired = parseInt(localStorage.getItem(storageKey) || '0');
+  const now = Date.now();
+
+  // 첫 로그인이면 30분 후부터 첫 발사 (즉시 안 뜨게)
+  if (lastFired === 0) {
+    localStorage.setItem(storageKey, String(now - RADIO_INTERVAL_MS / 2));
+    return;
+  }
+
+  if (now - lastFired < RADIO_INTERVAL_MS) {
+    renderRadioIcon();
+    return;
+  }
+
+  // 1시간 경과 → 새 라디오 이벤트 발사
+  fireLocalRadioEvent();
+  localStorage.setItem(storageKey, String(now));
+}
+
+/**
+ * 크루 로컬 라디오 이벤트 생성 + 팝업 표시
+ * (pet.radioSchedule에 저장하지 않음, 본인 화면에만 표시)
+ */
+function fireLocalRadioEvent() {
+  const cfg = CONFIG.RADIO_CONFIG;
+  const channel = cfg.CHANNELS[Math.floor(Math.random() * cfg.CHANNELS.length)];
+  const freq = 10 + Math.floor(Math.random() * 80);
+  const now = Date.now();
+  const event = {
+    scheduledAt: now,
+    windowEnd: now + cfg.WINDOW_HOURS * 3600 * 1000,
+    channelId: channel.id,
+    freq,
+    popped: false,
+    matched: false,
+    missed: false,
+    isLocal: true,  // 글로벌 스케줄이 아님 표시
+  };
+  // 전역에 저장 (아이콘 클릭 시 재오픈용)
+  radioLocalEvent = event;
+  openRadioPopup(event);
+  console.log('[radio] 로컬 이벤트 발사 - 정답 주파수:', freq, '/ 채널:', channel.label);
 }
 
 /**

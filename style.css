@@ -1502,3 +1502,23 @@ body {
   60%      { transform: scale(1.05); }
   80%      { transform: scale(0.98); }
 }
+
+/* ──────────────────────────────────────
+   SIGNAL 버튼 - 진행 중일 때 느리게 반짝
+   ────────────────────────────────────── */
+.cmd.signal-pulse {
+  animation: signalPulse 2.4s ease-in-out infinite;
+  border-color: #5fb37a !important;
+}
+@keyframes signalPulse {
+  0%, 100% {
+    background: transparent;
+    box-shadow: 0 0 0 0 rgba(3, 179, 82, 0);
+    color: #03B352;
+  }
+  50% {
+    background: #0a3818;
+    box-shadow: 0 0 8px rgba(3, 179, 82, 0.6), inset 0 0 4px rgba(3, 179, 82, 0.3);
+    color: #c9f0d8;
+  }
+}

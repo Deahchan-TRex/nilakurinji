@@ -407,6 +407,56 @@ export const Backend = {
     }
   },
 
+  /**
+   * 라디오 보상을 pet에 트랜잭션으로 적용 (로컬 이벤트용)
+   * - 글로벌 스케줄 무시, 보상 + 공용 대사 + 시각만 저장
+   */
+  async applyRadioReward(reward, storyText) {
+    if (CONFIG.LOCAL_TEST_MODE) {
+      const raw = localStorage.getItem('nk_pet');
+      const pet = raw ? JSON.parse(raw) : {};
+      this._mergeRadioReward(pet, reward, storyText);
+      localStorage.setItem('nk_pet', JSON.stringify(pet));
+      listeners.pet.forEach(cb => cb(pet));
+      return;
+    }
+    try {
+      const docRef = db._fns.doc(db, 'pet', 'main');
+      await db._fns.runTransaction(db, async (tx) => {
+        const snap = await tx.get(docRef);
+        const pet = snap.exists() ? snap.data() : {};
+        this._mergeRadioReward(pet, reward, storyText);
+        tx.set(docRef, pet);
+      });
+      console.log('[radio] 보상 트랜잭션 성공');
+    } catch (err) {
+      console.error('[radio] 보상 트랜잭션 실패:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * 보상 머지 헬퍼 (내부)
+   */
+  _mergeRadioReward(pet, reward, storyText) {
+    if (!reward) return;
+    for (const [key, val] of Object.entries(reward)) {
+      if (key === 'personality') continue;
+      if (pet[key] !== undefined) {
+        pet[key] = Math.max(0, Math.min(100, pet[key] + val));
+      }
+    }
+    if (reward.personality) {
+      pet.personality = pet.personality || {};
+      for (const [axis, d] of Object.entries(reward.personality)) {
+        pet.personality[axis] = Math.max(-100, Math.min(100, (pet.personality[axis] || 0) + d));
+      }
+    }
+    if (storyText) {
+      pet.lastSpeech = { text: storyText, at: Date.now(), to: '__sys__' };
+    }
+  },
+
   onPetChange(callback) {
     listeners.pet.push(callback);
 
