@@ -2042,3 +2042,94 @@ body {
   0%   { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+
+/* ──────────────────────────────────────
+   BATTLE 응원 / 팡파레
+   ────────────────────────────────────── */
+.battle-cheer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 8px 12px;
+  background: linear-gradient(90deg, rgba(232,168,83,0.1), rgba(232,168,83,0.02));
+  border-left: 3px solid #e8a853;
+  animation: battleCheerSlide 0.4s ease-out;
+}
+.battle-cheer-icon {
+  color: #e8a853;
+  font-size: 16px;
+  animation: battleCheerNote 1s ease-in-out infinite;
+}
+.battle-cheer-text {
+  color: #f0c074;
+  font-size: 12px;
+  font-style: italic;
+}
+@keyframes battleCheerSlide {
+  from { transform: translateX(-10px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+@keyframes battleCheerNote {
+  0%, 100% { transform: rotate(-5deg) scale(1); }
+  50%      { transform: rotate(5deg) scale(1.1); }
+}
+
+/* 팡파레 오버레이 */
+.battle-fanfare-overlay {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle, rgba(232,168,83,0.15), rgba(0,0,0,0.6));
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: battleFanfareBg 1.8s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes battleFanfareBg {
+  0%   { background: radial-gradient(circle, rgba(232,168,83,0), rgba(0,0,0,0)); }
+  20%  { background: radial-gradient(circle, rgba(232,168,83,0.3), rgba(0,0,0,0.7)); }
+  100% { background: radial-gradient(circle, rgba(232,168,83,0), rgba(0,0,0,0)); opacity: 0; }
+}
+.battle-fanfare-content {
+  text-align: center;
+  font-family: 'Courier New', monospace;
+  animation: battleFanfarePop 1.8s ease-out forwards;
+}
+.battle-fanfare-content.victory { color: #e8a853; }
+.battle-fanfare-content.defeat { color: #c97d5f; }
+@keyframes battleFanfarePop {
+  0%   { transform: scale(0.3) rotate(-10deg); opacity: 0; }
+  20%  { transform: scale(1.2) rotate(5deg); opacity: 1; }
+  40%  { transform: scale(1) rotate(0deg); }
+  80%  { transform: scale(1) rotate(0deg); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0; }
+}
+.battle-fanfare-icon {
+  font-size: 60px;
+  margin-bottom: 10px;
+  text-shadow: 0 0 20px currentColor;
+  animation: battleFanfareIcon 0.8s ease-out infinite alternate;
+}
+@keyframes battleFanfareIcon {
+  from { filter: drop-shadow(0 0 6px currentColor); }
+  to   { filter: drop-shadow(0 0 16px currentColor); }
+}
+.battle-fanfare-label {
+  font-size: 32px;
+  font-weight: bold;
+  letter-spacing: 8px;
+  text-shadow: 0 0 12px currentColor;
+}
+.battle-fanfare-name {
+  font-size: 14px;
+  margin-top: 8px;
+  color: #c9c9c9;
+  letter-spacing: 2px;
+}
+
+@media (max-width: 480px) {
+  .battle-fanfare-icon { font-size: 48px; }
+  .battle-fanfare-label { font-size: 24px; letter-spacing: 4px; }
+}
