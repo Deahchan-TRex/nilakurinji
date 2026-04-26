@@ -7144,23 +7144,11 @@ function diceFace(n) {
 }
 
 /**
- * 승리 팡파레 오버레이 (1.5초)
- * @param {string} winnerName - 승자 이름
- * @param {boolean} isVictory - 본인이 이겼는지 (false면 패배 톤)
+ * 승리/패배 사운드만 재생 (오버레이 없음)
+ * 결과는 인라인 카드로 표시
  */
-function showBattleFanfare(winnerName, isVictory = true) {
-  const overlay = document.createElement('div');
-  overlay.className = 'battle-fanfare-overlay';
-  overlay.innerHTML = `
-    <div class="battle-fanfare-content ${isVictory ? 'victory' : 'defeat'}">
-      <div class="battle-fanfare-icon">${isVictory ? '🏆' : '✕'}</div>
-      <div class="battle-fanfare-label">${isVictory ? 'VICTORY' : 'DEFEAT'}</div>
-      <div class="battle-fanfare-name">${winnerName}</div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
+function playBattleFinishSound(isVictory = true) {
   playSfx(isVictory ? 'fanfare' : 'defeat');
-  setTimeout(() => overlay.remove(), 1800);
 }
 
 /**
@@ -7271,17 +7259,35 @@ function renderBattle(modal, state) {
   // 헤더 텍스트
   let headerHTML = '';
   if (done) {
-    if (state.result === 'win') {
-      headerHTML = `
-        <div class="maze-terminal-line good">&gt; ◆ 승리! ${state.round - 1}라운드 만에 제압.</div>
-        <div class="maze-terminal-line dim">&gt; 보상: ${state.rewardText}</div>
-      `;
-    } else {
-      headerHTML = `
-        <div class="maze-terminal-line warn">&gt; ✕ 패배. MARS II에게 졌다.</div>
-        <div class="maze-terminal-line dim">&gt; ${state.rewardText}</div>
-      `;
-    }
+    const winnerName = state.result === 'win' ? currentUser.name : 'MARS II';
+    const winnerColor = state.result === 'win' ? '#03B352' : '#c97d5f';
+    const loserName = state.result === 'win' ? 'MARS II' : currentUser.name;
+    const winnerHp = state.result === 'win' ? state.crewHp : state.marsHp;
+    const loserHp = state.result === 'win' ? state.marsHp : state.crewHp;
+    headerHTML = `
+      <div class="battle-result-card ${state.result}">
+        <div class="battle-result-title" style="color:${winnerColor};">
+          ${state.result === 'win' ? '◆' : '✕'} ${winnerName} 승리!
+        </div>
+        <div class="battle-result-stats">
+          <div class="battle-result-row">
+            <span class="battle-result-name" style="color:${winnerColor};">${winnerName}</span>
+            <span class="battle-result-hp">HP ${winnerHp}/${state.maxHp}</span>
+          </div>
+          <div class="battle-result-row">
+            <span class="battle-result-name" style="color:#666;">${loserName}</span>
+            <span class="battle-result-hp" style="color:#666;">HP ${loserHp}/${state.maxHp}</span>
+          </div>
+          <div class="battle-result-divider"></div>
+          <div class="battle-result-meta">
+            ${state.round - 1}라운드 만에 결판
+          </div>
+        </div>
+        <div class="battle-result-reward">
+          ${state.rewardText}
+        </div>
+      </div>
+    `;
   } else if (state.phase === 'preroll') {
     headerHTML = `
       <div class="maze-terminal-line">&gt; ROUND ${state.round} · 선턴 다이스</div>
@@ -7289,13 +7295,12 @@ function renderBattle(modal, state) {
     `;
   } else {
     const attLabel = state.currentAttacker === 'crew' ? currentUser.name : 'MARS II';
-    const defLabel = state.currentAttacker === 'crew' ? 'MARS II' : currentUser.name;
     if (state.phase === 'attack') {
       headerHTML = `
         <div class="maze-terminal-line">&gt; ROUND ${state.round} · ${attLabel}의 공격!</div>
       `;
     } else if (state.phase === 'defense') {
-      const isMyDef = state.currentAttacker === 'mars';  // MARS가 공격하면 내가 방어
+      const isMyDef = state.currentAttacker === 'mars';
       headerHTML = `
         <div class="maze-terminal-line">&gt; ROUND ${state.round} · ${attLabel} 공격 ${state.attackDice}!</div>
         <div class="maze-terminal-line dim">&gt; ${isMyDef ? '너의 차례. 방어할까 회피할까?' : 'MARS II가 어떻게 받아낼까...'}</div>
@@ -7334,16 +7339,18 @@ function renderBattle(modal, state) {
   // 다이스 영역 (preroll/attack/defense 페이즈 시 표시)
   let diceHTML = '';
   if (state.phase === 'preroll' && (state.crewPreroll !== null || state.marsPreroll !== null)) {
+    const crewWin = state.crewPreroll !== null && state.marsPreroll !== null && state.crewPreroll > state.marsPreroll;
+    const marsWin = state.crewPreroll !== null && state.marsPreroll !== null && state.marsPreroll > state.crewPreroll;
     diceHTML = `
       <div class="bt-dice-row">
-        <div class="bt-dice-side">
+        <div class="bt-dice-side ${crewWin ? 'winner' : ''}">
           <div class="bt-dice-label">${currentUser.name}</div>
           <div class="bt-dice-face">${state.crewPreroll !== null ? diceFace(state.crewPreroll) : '·'}</div>
           <div class="bt-dice-num">${state.crewPreroll !== null ? state.crewPreroll : '-'}</div>
           <div class="bt-dice-action">선턴</div>
         </div>
         <div class="bt-dice-vs">VS</div>
-        <div class="bt-dice-side">
+        <div class="bt-dice-side ${marsWin ? 'winner' : ''}">
           <div class="bt-dice-label" style="color:#c97d5f;">MARS II</div>
           <div class="bt-dice-face">${state.marsPreroll !== null ? diceFace(state.marsPreroll) : '·'}</div>
           <div class="bt-dice-num">${state.marsPreroll !== null ? state.marsPreroll : '-'}</div>
@@ -7354,22 +7361,76 @@ function renderBattle(modal, state) {
   } else if ((state.phase === 'attack' || state.phase === 'defense') && state.attackDice !== null) {
     const attLabel = state.currentAttacker === 'crew' ? currentUser.name : 'MARS II';
     const defLabel = state.currentAttacker === 'crew' ? 'MARS II' : currentUser.name;
+    const attColor = state.currentAttacker === 'crew' ? '#03B352' : '#c97d5f';
+    const defColor = state.currentAttacker === 'crew' ? '#c97d5f' : '#03B352';
+    const variantLabel = state.attackVariant === 'quick' ? '🗡 견제' : '⚔ 강타';
+
+    // 데미지 시각화
+    let damageHTML = '';
+    if (state.defenseDice !== null && state.defenseAction !== null) {
+      const isDodgeSuccess = state.defenseAction === 'dodge' && state.defenseDice >= 8;
+      const isFullDodgeFail = state.defenseAction === 'dodge' && state.defenseDice < 8;
+
+      if (isDodgeSuccess) {
+        damageHTML = `
+          <div class="bt-damage-card no-damage">
+            <div class="bt-damage-headline">💨 완전 회피!</div>
+            <div class="bt-damage-detail">
+              회피 다이스 <strong>${state.defenseDice}</strong> (8+) → 데미지 <strong>0</strong>
+            </div>
+          </div>
+        `;
+      } else if (isFullDodgeFail) {
+        damageHTML = `
+          <div class="bt-damage-card big-damage">
+            <div class="bt-damage-headline">⚠ 회피 실패!</div>
+            <div class="bt-damage-detail">
+              회피 ${state.defenseDice} (8 미만) → <strong class="bt-damage-num">${state.attackDice}</strong> 피해
+            </div>
+          </div>
+        `;
+      } else if (state.defenseAction === 'defend') {
+        const blocked = Math.min(state.attackDice, state.defenseDice);
+        const dmg = Math.max(0, state.attackDice - state.defenseDice);
+        if (dmg === 0) {
+          damageHTML = `
+            <div class="bt-damage-card no-damage">
+              <div class="bt-damage-headline">🛡 완전 차단!</div>
+              <div class="bt-damage-detail">
+                공격 ${state.attackDice} − 방어 ${state.defenseDice} = <strong>0</strong> 피해
+              </div>
+            </div>
+          `;
+        } else {
+          damageHTML = `
+            <div class="bt-damage-card damage">
+              <div class="bt-damage-headline">⚔ ${dmg} 피해 적중</div>
+              <div class="bt-damage-detail">
+                공격 ${state.attackDice} − 방어 ${state.defenseDice} = <strong class="bt-damage-num">${dmg}</strong>
+              </div>
+            </div>
+          `;
+        }
+      }
+    }
+
     diceHTML = `
-      <div class="bt-dice-row">
-        <div class="bt-dice-side">
-          <div class="bt-dice-label" style="color:${state.currentAttacker === 'crew' ? '#03B352' : '#c97d5f'};">⚔ ${attLabel}</div>
-          <div class="bt-dice-face">${diceFace(state.attackDice)}</div>
-          <div class="bt-dice-num">${state.attackDice}</div>
-          <div class="bt-dice-action">공격</div>
+      <div class="bt-dice-row attack">
+        <div class="bt-dice-side attacker">
+          <div class="bt-dice-label" style="color:${attColor};">⚔ ${attLabel}</div>
+          <div class="bt-dice-face attack">${diceFace(state.attackDice)}</div>
+          <div class="bt-dice-num huge">${state.attackDice}</div>
+          <div class="bt-dice-action">${state.currentAttacker === 'crew' ? variantLabel : '⚔ 공격'}</div>
         </div>
         <div class="bt-dice-vs">→</div>
-        <div class="bt-dice-side">
-          <div class="bt-dice-label" style="color:${state.currentAttacker === 'crew' ? '#c97d5f' : '#03B352'};">${defLabel}</div>
+        <div class="bt-dice-side defender">
+          <div class="bt-dice-label" style="color:${defColor};">${defLabel}</div>
           <div class="bt-dice-face">${state.defenseDice !== null ? diceFace(state.defenseDice) : '?'}</div>
-          <div class="bt-dice-num">${state.defenseDice !== null ? state.defenseDice : '-'}</div>
+          <div class="bt-dice-num huge">${state.defenseDice !== null ? state.defenseDice : '-'}</div>
           <div class="bt-dice-action">${state.defenseAction === 'defend' ? '🛡 방어' : state.defenseAction === 'dodge' ? '💨 회피' : '...'}</div>
         </div>
       </div>
+      ${damageHTML}
     `;
   }
 
@@ -7385,18 +7446,26 @@ function renderBattle(modal, state) {
   } else if (state.phase === 'preroll') {
     actionHTML = `
       <div style="text-align:center;margin-top:14px;">
-        <button class="maze-btn-action" id="bt-roll-preroll" ${state.animating ? 'disabled' : ''}>
-          🎲 선턴 다이스 굴리기
+        <button class="bt-roll-btn" id="bt-roll-preroll" ${state.animating ? 'disabled' : ''}>
+          <span class="bt-roll-dice">🎲</span>
+          <span class="bt-roll-label">선턴 다이스 굴리기</span>
         </button>
       </div>
     `;
   } else if (state.phase === 'attack') {
     if (state.currentAttacker === 'crew') {
-      // 크루 공격 차례 - 굴리기 버튼
+      // 크루 공격 차례 - 2가지 공격 버튼 (강타 / 견제)
       actionHTML = `
-        <div style="text-align:center;margin-top:14px;">
-          <button class="maze-btn-action" id="bt-roll-attack" ${state.animating ? 'disabled' : ''}>
-            ⚔ 공격 다이스 굴리기
+        <div class="bt-actions" style="grid-template-columns:1fr 1fr;">
+          <button class="bt-action-btn attack" data-attack="heavy" ${state.animating ? 'disabled' : ''}>
+            <div class="bt-action-icon">⚔</div>
+            <div class="bt-action-label">강타</div>
+            <div class="bt-action-desc">정면 공격</div>
+          </button>
+          <button class="bt-action-btn attack-light" data-attack="quick" ${state.animating ? 'disabled' : ''}>
+            <div class="bt-action-icon">🗡</div>
+            <div class="bt-action-label">견제</div>
+            <div class="bt-action-desc">빠른 일격</div>
           </button>
         </div>
       `;
@@ -7470,8 +7539,14 @@ function attachBattleHandlers(modal, state) {
 
   document.getElementById('bt-roll-preroll')?.addEventListener('click', () =>
     handleBattlePreroll(modal, state));
-  document.getElementById('bt-roll-attack')?.addEventListener('click', () =>
-    handleBattleCrewAttack(modal, state));
+
+  modal.querySelectorAll('[data-attack]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (state.animating) return;
+      const variant = btn.dataset.attack;
+      handleBattleCrewAttack(modal, state, variant);
+    });
+  });
 
   modal.querySelectorAll('[data-defaction]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -7542,10 +7617,19 @@ async function handleBattlePreroll(modal, state) {
 
 /**
  * 2-A) 크루 공격 차례 - 다이스 굴림
+ * @param variant 'heavy' (강타: 다이스 그대로) | 'quick' (견제: 1D6+2 = 3-8 범위, 안정적)
  */
-async function handleBattleCrewAttack(modal, state) {
+async function handleBattleCrewAttack(modal, state, variant = 'heavy') {
   state.animating = true;
-  state.attackDice = rollD10();
+  // 강타: 1D10 (1~10, 변동 큼)
+  // 견제: 1D6 + 2 (3~8, 안정적이지만 높은 값 못 나옴)
+  if (variant === 'quick') {
+    state.attackDice = Math.floor(Math.random() * 6) + 1 + 2;  // 3~8
+    state.attackVariant = 'quick';
+  } else {
+    state.attackDice = rollD10();
+    state.attackVariant = 'heavy';
+  }
   playSfx('blip');
 
   // MARS II 응원
@@ -7581,7 +7665,7 @@ async function handleBattleCrewAttack(modal, state) {
     state.animating = false;
     renderBattle(modal, state);
     attachBattleHandlers(modal, state);
-    showBattleFanfare(currentUser.name, true);
+    playBattleFinishSound(true);
     return;
   }
 
@@ -7659,7 +7743,7 @@ async function handleBattleCrewDefense(modal, state, defAction) {
     state.animating = false;
     renderBattle(modal, state);
     attachBattleHandlers(modal, state);
-    showBattleFanfare('MARS II', false);
+    playBattleFinishSound(false);
     return;
   }
 

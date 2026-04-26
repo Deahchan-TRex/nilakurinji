@@ -5,7 +5,7 @@
 export const CONFIG = {
   // ── 앱 버전 (배포마다 올림) ───────────────────────────
   // 이 값이 바뀌면 모든 접속자가 자동 새로고침됨
-  APP_VERSION: '2026.04.22.36',
+  APP_VERSION: '2026.04.22.37',
 
   // ── 캐릭터 기본 ───────────────────────────────────────
   PET_NAME: 'MARS II',
@@ -227,7 +227,7 @@ export const CONFIG = {
     },
     // BATTLE - MARS II와의 다이스 결투 (PvE)
     BATTLE: {
-      MAX_HP: 50,
+      MAX_HP: 30,
       DICE_MAX: 10,            // 1D10
       DODGE_THRESHOLD: 8,      // 다이스 8 이상이면 완전 회피
       // MARS II AI (HP 비율별 행동 분포)

@@ -2133,3 +2133,214 @@ body {
   .battle-fanfare-icon { font-size: 48px; }
   .battle-fanfare-label { font-size: 24px; letter-spacing: 4px; }
 }
+
+/* ──────────────────────────────────────
+   BATTLE 결과 카드 (인라인)
+   ────────────────────────────────────── */
+.battle-result-card {
+  margin: 12px 0;
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(3,179,82,0.08), rgba(3,179,82,0.02));
+  border: 1px solid #03B352;
+  box-shadow: 0 0 12px rgba(3,179,82,0.2);
+  animation: battleResultSlideIn 0.5s ease-out;
+}
+.battle-result-card.lose {
+  background: linear-gradient(180deg, rgba(201,125,95,0.08), rgba(201,125,95,0.02));
+  border-color: #c97d5f;
+  box-shadow: 0 0 12px rgba(201,125,95,0.2);
+}
+@keyframes battleResultSlideIn {
+  from { transform: translateY(-10px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+.battle-result-title {
+  font-size: 18px;
+  font-weight: bold;
+  text-align: center;
+  letter-spacing: 2px;
+  margin-bottom: 12px;
+  text-shadow: 0 0 8px currentColor;
+}
+.battle-result-stats {
+  background: #050a07;
+  padding: 10px 12px;
+  border: 1px dotted #2d5a3e;
+  margin-bottom: 10px;
+}
+.battle-result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 4px 0;
+}
+.battle-result-name {
+  font-size: 12px;
+  letter-spacing: 1px;
+  font-weight: bold;
+}
+.battle-result-hp {
+  font-size: 11px;
+  font-family: monospace;
+  color: #c9c9c9;
+}
+.battle-result-divider {
+  height: 1px;
+  background: #2d5a3e;
+  margin: 6px 0;
+}
+.battle-result-meta {
+  text-align: center;
+  font-size: 10px;
+  color: #5fb37a;
+  letter-spacing: 1px;
+}
+.battle-result-reward {
+  text-align: center;
+  font-size: 11px;
+  color: #c9c9c9;
+  padding: 8px;
+  background: rgba(0,0,0,0.3);
+}
+
+/* ──────────────────────────────────────
+   다이스 영역 강화 + 데미지 카드
+   ────────────────────────────────────── */
+.bt-dice-row.attack {
+  background: linear-gradient(90deg, rgba(3,179,82,0.05), rgba(201,125,95,0.05));
+}
+.bt-dice-side.winner {
+  background: rgba(3,179,82,0.1);
+  border-radius: 4px;
+}
+.bt-dice-side.attacker .bt-dice-face {
+  color: #ffd700;
+  text-shadow: 0 0 12px #ffd700;
+  animation: btAttackerShake 0.5s ease-out;
+}
+@keyframes btAttackerShake {
+  0%, 100% { transform: translateX(0); }
+  25%      { transform: translateX(-4px) rotate(-3deg); }
+  75%      { transform: translateX(4px) rotate(3deg); }
+}
+.bt-dice-num.huge {
+  font-size: 22px;
+  font-weight: bold;
+  text-shadow: 0 0 6px currentColor;
+  margin-top: 4px;
+}
+
+/* 데미지 표시 카드 */
+.bt-damage-card {
+  margin: 12px 0;
+  padding: 12px 14px;
+  text-align: center;
+  border: 2px solid;
+  animation: btDamagePulse 0.5s ease-out;
+}
+@keyframes btDamagePulse {
+  0%   { transform: scale(0.85); opacity: 0; }
+  60%  { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.bt-damage-card.no-damage {
+  background: rgba(125,156,179,0.1);
+  border-color: #7d9cb3;
+  color: #9ab3c9;
+}
+.bt-damage-card.damage {
+  background: rgba(232,168,83,0.12);
+  border-color: #e8a853;
+  color: #f0c074;
+}
+.bt-damage-card.big-damage {
+  background: rgba(201,125,95,0.15);
+  border-color: #c97d5f;
+  color: #e8956f;
+  animation: btDamageBigPulse 0.6s ease-out;
+}
+@keyframes btDamageBigPulse {
+  0%   { transform: scale(0.7); opacity: 0; }
+  30%  { transform: scale(1.15); }
+  60%  { transform: scale(0.95); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.bt-damage-headline {
+  font-size: 15px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+  text-shadow: 0 0 6px currentColor;
+}
+.bt-damage-detail {
+  font-size: 11px;
+  color: #c9c9c9;
+}
+.bt-damage-num {
+  font-size: 16px;
+  color: #ffd700;
+  text-shadow: 0 0 4px #ffd700;
+}
+
+/* ──────────────────────────────────────
+   공격 굴리기 큰 버튼 (별도)
+   ────────────────────────────────────── */
+.bt-roll-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 28px;
+  background: #1a3d28;
+  border: 2px solid #03B352;
+  color: #03B352;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.15s;
+  animation: btRollPulse 1.5s ease-in-out infinite;
+}
+@keyframes btRollPulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(3,179,82,0.3); }
+  50%      { box-shadow: 0 0 18px rgba(3,179,82,0.6); }
+}
+.bt-roll-btn:hover {
+  background: #0a4a20;
+  transform: scale(1.03);
+}
+.bt-roll-btn:active {
+  transform: scale(0.96);
+}
+.bt-roll-dice {
+  font-size: 28px;
+  animation: btRollDiceSpin 2s linear infinite;
+  display: inline-block;
+}
+@keyframes btRollDiceSpin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.bt-roll-label {
+  font-size: 12px;
+  font-weight: bold;
+}
+
+/* 견제(quick) 공격 버튼 */
+.bt-action-btn.attack-light {
+  border-color: #e8a853;
+  color: #e8a853;
+}
+.bt-action-btn.attack-light:hover:not(:disabled) {
+  background: #1a1505;
+  color: #f0c074;
+  box-shadow: 0 0 6px rgba(232,168,83,0.3);
+}
+
+/* 결과 카드 모바일 */
+@media (max-width: 480px) {
+  .battle-result-title { font-size: 16px; letter-spacing: 1px; }
+  .bt-dice-num.huge { font-size: 18px; }
+  .bt-damage-headline { font-size: 13px; }
+  .bt-damage-num { font-size: 14px; }
+}
