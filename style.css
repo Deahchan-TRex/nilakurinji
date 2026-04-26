@@ -1527,26 +1527,267 @@ body {
 }
 
 /* ──────────────────────────────────────
-   미로 게임 (MAZE)
+   미로 게임 (MAZE) - 라디오 스타일 팝업
    ────────────────────────────────────── */
-.mz-grid {
-  user-select: none;
-  white-space: pre;
-  display: inline-block;
+.maze-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(94vw, 480px);
+  max-height: 92vh;
+  background: #050a07;
+  border: 1px solid #5fb37a;
+  box-shadow: 0 0 32px rgba(3, 179, 82, 0.3), 0 0 0 1px rgba(3, 179, 82, 0.15);
+  color: #03B352;
+  font-family: 'Courier New', monospace;
+  z-index: 10000;
+  overflow-y: auto;
+  animation: radioGlitchIn 0.4s ease-out;
 }
-.mz-fog        { color: #1a2a30; }
-.mz-wall       { color: #5a6a70; }
-.mz-path       { color: #2d4a5a; }
-.mz-path-dim   { color: #1a2530; }
-.mz-player     { color: #03B352; font-weight: bold; text-shadow: 0 0 6px #03B352; }
-.mz-exit       { color: #e8a853; font-weight: bold; text-shadow: 0 0 4px #e8a853; }
-.mz-treasure   { color: #ffd700; text-shadow: 0 0 4px #ffd700; }
-.mz-trap       { color: #c97d5f; }
 
-.mz-btn:hover {
-  background: #1a2533 !important;
-  color: #c9d4e0 !important;
+.maze-popup-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: #0a1410;
+  border-bottom: 1px solid #2d5a3e;
+  font-size: 12px;
+  color: #5fb37a;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
-.mz-btn:active {
-  transform: scale(0.95);
+.maze-close {
+  cursor: pointer;
+  letter-spacing: 3px;
+  color: #8fb39a;
+  font-size: 12px;
+  user-select: none;
+}
+.maze-close:hover { color: #e8a853; }
+
+.maze-popup-body {
+  padding: 14px 16px;
+}
+
+.maze-terminal-line {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #c9c9c9;
+  margin-bottom: 2px;
+}
+.maze-terminal-line.dim { color: #5fb37a; opacity: 0.75; }
+.maze-terminal-line.warn { color: #e8a853; }
+.maze-terminal-line.good {
+  color: #03B352;
+  font-weight: bold;
+  text-shadow: 0 0 6px #03B352;
+}
+
+/* 상태 바 */
+.maze-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 8px 10px;
+  background: #0a1410;
+  border: 1px dotted #2d5a3e;
+}
+.maze-stat-label {
+  color: #5fb37a;
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+.maze-stat-label.warn { color: #e8a853; }
+.maze-stat-divider { color: #2d5a3e; }
+.maze-stat-bars {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+}
+.maze-bar {
+  flex: 1;
+  height: 14px;
+  background: #1a3d28;
+}
+.maze-bar.on {
+  background: #03B352;
+  box-shadow: 0 0 4px #03B352;
+}
+.maze-stat-value {
+  color: #c9c9c9;
+  font-size: 11px;
+  font-family: monospace;
+  min-width: 60px;
+  text-align: right;
+}
+
+/* 그리드 (큰 셀, CSS Grid) */
+.maze-grid {
+  display: grid;
+  gap: 2px;
+  background: #0a1410;
+  border: 1px solid #2d5a3e;
+  padding: 4px;
+  margin: 14px 0;
+  /* 정사각형 유지 */
+  aspect-ratio: 1 / 1;
+  width: 100%;
+}
+.maze-cell {
+  background: #050a07;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(10px, 2.4vw, 18px);
+  font-weight: bold;
+  font-family: monospace;
+  user-select: none;
+  /* 셀이 정사각형 유지되도록 */
+  aspect-ratio: 1 / 1;
+}
+.maze-cell.maze-fog {
+  background: #0a0e0a;
+  background-image: repeating-linear-gradient(
+    45deg,
+    #0a0e0a 0 3px,
+    #050805 3px 6px
+  );
+}
+.maze-cell.maze-wall {
+  background: #1a3d28;
+  border: 1px solid #2d5a3e;
+}
+.maze-cell.maze-path {
+  background: #0a1410;
+  color: #2d5a3e;
+}
+.maze-cell.maze-path-dim {
+  background: #050805;
+  color: #1a2a20;
+}
+.maze-cell.maze-player {
+  background: #03B352;
+  color: #050a07;
+  box-shadow: 0 0 8px #03B352, inset 0 0 4px rgba(255,255,255,0.3);
+  animation: mazePlayerPulse 1.2s ease-in-out infinite;
+}
+@keyframes mazePlayerPulse {
+  0%, 100% { box-shadow: 0 0 8px #03B352, inset 0 0 4px rgba(255,255,255,0.3); }
+  50%      { box-shadow: 0 0 14px #03B352, inset 0 0 6px rgba(255,255,255,0.5); }
+}
+.maze-cell.maze-exit {
+  background: #2a1a0a;
+  color: #e8a853;
+  border: 1px solid #e8a853;
+  text-shadow: 0 0 4px #e8a853;
+  animation: mazeExitPulse 1.5s ease-in-out infinite;
+}
+@keyframes mazeExitPulse {
+  0%, 100% { background: #2a1a0a; }
+  50%      { background: #4a2a0a; }
+}
+.maze-cell.maze-treasure {
+  background: #1a1a0a;
+  color: #ffd700;
+  text-shadow: 0 0 4px #ffd700;
+}
+.maze-cell.maze-trap {
+  background: #2a0a0a;
+  color: #c97d5f;
+}
+
+/* 컨트롤 (3x3 grid) */
+.maze-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  max-width: 240px;
+  margin: 14px auto 6px;
+}
+.maze-btn {
+  padding: 14px 0;
+  background: #0a1410;
+  border: 1px solid #5fb37a;
+  color: #5fb37a;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.1s;
+  user-select: none;
+}
+.maze-btn:hover {
+  background: #0f2018;
+  color: #03B352;
+}
+.maze-btn:active {
+  transform: scale(0.92);
+  background: #0a3818;
+}
+.maze-btn-center {
+  background: transparent !important;
+  border-color: #2d5a3e !important;
+  color: #2d5a3e !important;
+  cursor: default !important;
+  font-size: 12px !important;
+}
+.maze-btn-center:active {
+  transform: none !important;
+}
+
+/* 결과 액션 */
+.maze-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+}
+.maze-btn-action {
+  flex: 1;
+  padding: 12px;
+  background: #0a3818;
+  border: 1px solid #03B352;
+  color: #03B352;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.15s;
+}
+.maze-btn-action:hover {
+  background: #0f4a20;
+  box-shadow: 0 0 6px rgba(3, 179, 82, 0.5);
+}
+.maze-btn-action.secondary {
+  background: transparent;
+  border-color: #666;
+  color: #888;
+}
+.maze-btn-action.secondary:hover {
+  background: #1a1a1a;
+  color: #aaa;
+}
+
+/* 모바일 미세조정 */
+@media (max-width: 480px) {
+  .maze-popup {
+    width: 96vw;
+    max-height: 96vh;
+  }
+  .maze-popup-body {
+    padding: 10px 12px;
+  }
+  .maze-cell {
+    font-size: clamp(8px, 3vw, 16px);
+  }
+  .maze-controls {
+    max-width: 100%;
+  }
+  .maze-btn {
+    padding: 18px 0;
+    font-size: 22px;
+  }
 }

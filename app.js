@@ -6723,7 +6723,7 @@ function showMazeGame() {
 
   const modal = document.createElement('div');
   modal.id = 'minigame-modal';
-  modal.className = 'talk-modal';
+  modal.className = 'maze-popup';
   renderMazeGame(modal, state);
 
   const wrapper = document.getElementById('speech-wrapper');
@@ -6750,43 +6750,7 @@ function renderMazeGame(modal, state) {
   const isTest = isMinigameTestMode();
   const N = state.N;
 
-  // 미로 그리기
-  const lines = [];
-  for (let y = 0; y < N; y++) {
-    let row = '';
-    for (let x = 0; x < N; x++) {
-      const inSight = isInSight(state, x, y);
-      const visited = isVisited(state, x, y);
-
-      // 게임 종료 시 전체 보기
-      const showAll = state.cleared || state.failed;
-
-      if (!visited && !inSight && !showAll) {
-        row += '<span class="mz-fog">▒</span>';
-        continue;
-      }
-
-      const cell = state.grid[y][x];
-      // 동적 마커 (시야 안에 있을 때만 보물/함정 보임, visited는 평면)
-      const isExit = state.exit[0] === x && state.exit[1] === y;
-      const isTreasure = state.treasures.some(([tx, ty]) => tx === x && ty === y);
-      const isTrap = state.traps.some(([tx, ty]) => tx === x && ty === y);
-      const isPlayer = state.px === x && state.py === y;
-
-      let ch, cls;
-      if (isPlayer) { ch = '@'; cls = 'mz-player'; }
-      else if (isExit) { ch = 'E'; cls = 'mz-exit'; }
-      else if (isTreasure && (inSight || showAll)) { ch = '★'; cls = 'mz-treasure'; }
-      else if (isTrap && (inSight || showAll)) { ch = '▲'; cls = 'mz-trap'; }
-      else if (cell === '█') { ch = '█'; cls = 'mz-wall'; }
-      else { ch = '·'; cls = inSight ? 'mz-path' : 'mz-path-dim'; }
-
-      row += `<span class="${cls}">${ch}</span>`;
-    }
-    lines.push(row);
-  }
-
-  // 결과 영역
+  // 결과 영역 (CMD 터미널 라인)
   let resultHTML = '';
   if (state.cleared) {
     const turnsUsed = state.maxTurns - state.turnsLeft;
@@ -6796,81 +6760,132 @@ function renderMazeGame(modal, state) {
     else if (speed > 0) { label = '◆ 클리어'; color = '#5fb37a'; }
     else { label = '◇ 아슬한 탈출'; color = '#e8a853'; }
     resultHTML = `
-      <div style="padding:12px;background:#0a3818;border:1px solid #03B352;margin-bottom:10px;text-align:center;">
-        <div style="color:${color};font-size:14px;font-weight:bold;margin-bottom:6px;">${label}</div>
-        <div style="color:#c9c9c9;font-size:11px;margin-bottom:6px;">
-          ${turnsUsed}턴 사용 · ★ ${state.collectedTreasures}/${state.treasures.length + state.collectedTreasures} · ▲ ${state.triggeredTraps}회 밟음
-        </div>
-        <div style="color:#8fb39a;font-size:11px;">${state.rewardText}</div>
-      </div>
+      <div class="maze-terminal-line good" style="color:${color};font-weight:bold;">&gt; ${label}</div>
+      <div class="maze-terminal-line">&gt; ${turnsUsed}턴 사용 · 보물 ${state.collectedTreasures}개 · 함정 ${state.triggeredTraps}회</div>
+      <div class="maze-terminal-line dim">&gt; 보상: ${state.rewardText}</div>
     `;
   } else if (state.failed) {
     resultHTML = `
-      <div style="padding:12px;background:#3d1818;border:1px solid #c97d5f;margin-bottom:10px;text-align:center;">
-        <div style="color:#c97d5f;font-size:14px;font-weight:bold;margin-bottom:6px;">✕ 길을 잃었다</div>
-        <div style="color:#c9c9c9;font-size:11px;margin-bottom:6px;">
-          턴 소진 · ★ ${state.collectedTreasures} 회수
-        </div>
-        <div style="color:#8fb39a;font-size:11px;">${state.rewardText}</div>
-      </div>
+      <div class="maze-terminal-line warn">&gt; ✕ 길을 잃었다</div>
+      <div class="maze-terminal-line dim">&gt; 턴 소진 · 보물 ${state.collectedTreasures}개만 회수</div>
+      <div class="maze-terminal-line dim">&gt; 보상: ${state.rewardText}</div>
     `;
+  } else {
+    // 진행 중 안내
+    resultHTML = `
+      <div class="maze-terminal-line">&gt; 알 수 없는 미로. 출구를 찾아 이동.</div>
+      <div class="maze-terminal-line dim">&gt; 남은 시간: ${state.turnsLeft}턴 / 시야 2칸</div>
+    `;
+    if (state.lastEvent === 'treasure') {
+      resultHTML += `<div class="maze-terminal-line good">&gt; ✦ 보물 발견! 별 +1</div>`;
+    } else if (state.lastEvent === 'trap') {
+      resultHTML += `<div class="maze-terminal-line warn">&gt; ⚠ 함정 발동. 턴 -2</div>`;
+    } else {
+      resultHTML += `<div class="maze-terminal-line dim">&gt; 안개가 짙다...</div>`;
+    }
   }
 
-  // 이벤트 메시지
-  let eventHTML = '';
-  if (state.lastEvent === 'treasure') {
-    eventHTML = `<div style="color:#03B352;font-size:11px;text-align:center;margin-bottom:8px;">✦ 보물 발견! ★ +1</div>`;
-  } else if (state.lastEvent === 'trap') {
-    eventHTML = `<div style="color:#c97d5f;font-size:11px;text-align:center;margin-bottom:8px;">⚠ 함정! 턴 -2</div>`;
+  // 그리드 생성 (CSS grid 기반)
+  const showAll = state.cleared || state.failed;
+  let gridHTML = `<div class="maze-grid" style="grid-template-columns:repeat(${N},1fr);">`;
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const inSight = isInSight(state, x, y);
+      const visited = isVisited(state, x, y);
+
+      const isExit = state.exit[0] === x && state.exit[1] === y;
+      const isTreasure = state.treasures.some(([tx, ty]) => tx === x && ty === y);
+      const isTrap = state.traps.some(([tx, ty]) => tx === x && ty === y);
+      const isPlayer = state.px === x && state.py === y;
+      const isWall = state.grid[y][x] === '█';
+
+      // 안개 (방문 안 했고 시야 밖)
+      if (!visited && !inSight && !showAll) {
+        gridHTML += `<div class="maze-cell maze-fog"></div>`;
+        continue;
+      }
+
+      // 셀 종류 결정
+      let cls = 'maze-cell';
+      let inner = '';
+      if (isPlayer) {
+        cls += ' maze-player';
+        inner = '@';
+      } else if (isExit && (inSight || showAll || visited)) {
+        cls += ' maze-exit';
+        inner = 'E';
+      } else if (isTreasure && (inSight || showAll)) {
+        cls += ' maze-treasure';
+        inner = '★';
+      } else if (isTrap && (inSight || showAll)) {
+        cls += ' maze-trap';
+        inner = '▲';
+      } else if (isWall) {
+        cls += ' maze-wall';
+      } else {
+        // 빈 길 - 시야 안 vs 방문만
+        cls += inSight ? ' maze-path' : ' maze-path-dim';
+      }
+      gridHTML += `<div class="${cls}">${inner}</div>`;
+    }
   }
+  gridHTML += `</div>`;
 
   const done = state.cleared || state.failed;
 
   modal.innerHTML = `
-    <div class="talk-modal-head" style="background:#1a2533;">
-      <span>MAZE · 미로 탐험 (${N}x${N}) ${isTest ? '· <span style="color:#e8a853;">[TEST]</span>' : ''}</span>
-      <span class="talk-close" id="mz-close">✕ 닫기</span>
+    <div class="maze-popup-head">
+      <span>&gt; MAZE.EXE · ${N}x${N} ${isTest ? '· <span style="color:#e8a853;">[TEST]</span>' : ''}</span>
+      <span class="maze-close" id="mz-close" title="닫기">─ _ ✕</span>
     </div>
-    <div class="talk-modal-body" style="display:block;padding:14px;">
+    <div class="maze-popup-body">
       ${resultHTML}
-      ${eventHTML}
 
-      <pre class="mz-grid" style="background:#050a0e;border:1px solid #2d4a5a;padding:8px;
-        font-family:'Courier New',monospace;font-size:14px;line-height:1.0;letter-spacing:1px;
-        color:#c9c9c9;margin:0 0 12px;text-align:center;overflow-x:auto;
-">${lines.join('\n')}</pre>
-
-      <div style="display:flex;justify-content:space-between;align-items:center;
-        font-size:11px;color:#8fb39a;margin-bottom:14px;padding:0 4px;">
-        <span>남은 턴: <strong style="color:${state.turnsLeft <= 5 ? '#c97d5f' : '#03B352'};">${state.turnsLeft}</strong>/${state.maxTurns}</span>
-        <span>★ ${state.collectedTreasures}</span>
-        <span>▲ ${state.triggeredTraps}</span>
+      <!-- 상태 바 (라디오 SIGNAL 라인 흉내) -->
+      <div class="maze-stat-row">
+        <span class="maze-stat-label">TURN</span>
+        <div class="maze-stat-bars">
+          ${(() => {
+            const segs = 10;
+            const ratio = Math.max(0, state.turnsLeft / state.maxTurns);
+            const filled = Math.ceil(ratio * segs);
+            return Array.from({length: segs}, (_, i) =>
+              `<span class="maze-bar ${i < filled ? 'on' : ''}"></span>`
+            ).join('');
+          })()}
+        </div>
+        <span class="maze-stat-value">${state.turnsLeft}/${state.maxTurns}</span>
       </div>
 
+      <div class="maze-stat-row">
+        <span class="maze-stat-label">★ ${state.collectedTreasures}</span>
+        <span class="maze-stat-divider">·</span>
+        <span class="maze-stat-label warn">▲ ${state.triggeredTraps}</span>
+      </div>
+
+      <!-- 그리드 -->
+      ${gridHTML}
+
       ${!done ? `
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;max-width:200px;margin:0 auto;">
-          <span></span>
-          <button class="mz-btn" data-dir="up" style="padding:10px;background:#0a1018;
-            border:1px solid #5a7d8f;color:#7d9cb3;font-family:inherit;cursor:pointer;font-size:14px;">↑</button>
-          <span></span>
-          <button class="mz-btn" data-dir="left" style="padding:10px;background:#0a1018;
-            border:1px solid #5a7d8f;color:#7d9cb3;font-family:inherit;cursor:pointer;font-size:14px;">←</button>
-          <button class="mz-btn" data-dir="down" style="padding:10px;background:#0a1018;
-            border:1px solid #5a7d8f;color:#7d9cb3;font-family:inherit;cursor:pointer;font-size:14px;">↓</button>
-          <button class="mz-btn" data-dir="right" style="padding:10px;background:#0a1018;
-            border:1px solid #5a7d8f;color:#7d9cb3;font-family:inherit;cursor:pointer;font-size:14px;">→</button>
+        <!-- 이동 컨트롤 -->
+        <div class="maze-controls">
+          <div></div>
+          <button class="maze-btn" data-dir="up">↑</button>
+          <div></div>
+          <button class="maze-btn" data-dir="left">←</button>
+          <button class="maze-btn maze-btn-center" data-dir="" disabled>· · ·</button>
+          <button class="maze-btn" data-dir="right">→</button>
+          <div></div>
+          <button class="maze-btn" data-dir="down">↓</button>
+          <div></div>
         </div>
-        <div style="text-align:center;margin-top:10px;font-size:10px;color:#666;">
-          @ MARS II · ★ 보물 · ▲ 함정 · E 출구 · ▒ 안개
+        <div class="maze-terminal-line dim" style="text-align:center;margin-top:6px;">
+          &gt; @ MARS II · ★ 보물 · ▲ 함정 · E 출구
         </div>
       ` : `
-        <div style="display:flex;gap:8px;margin-top:6px;">
-          <button id="mz-again" style="flex:1;padding:10px;background:transparent;
-            border:1px solid #5fb37a;color:#5fb37a;font-family:inherit;font-size:12px;
-            cursor:pointer;">다시 도전</button>
-          <button id="mz-back" style="flex:1;padding:10px;background:transparent;
-            border:1px solid #666;color:#888;font-family:inherit;font-size:12px;
-            cursor:pointer;">메뉴로</button>
+        <div class="maze-actions">
+          <button id="mz-again" class="maze-btn-action">다시 도전</button>
+          <button id="mz-back" class="maze-btn-action secondary">메뉴로</button>
         </div>
       `}
     </div>
@@ -6880,10 +6895,12 @@ function renderMazeGame(modal, state) {
 function attachMazeHandlers(modal, state) {
   document.getElementById('mz-close')?.addEventListener('click', () => modal.remove());
 
-  modal.querySelectorAll('.mz-btn').forEach(btn => {
+  modal.querySelectorAll('.maze-btn').forEach(btn => {
+    if (btn.disabled) return;
     btn.addEventListener('click', () => {
       if (state.cleared || state.failed) return;
       const dir = btn.dataset.dir;
+      if (!dir) return;
       const dx = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
       const dy = dir === 'up' ? -1 : dir === 'down' ? 1 : 0;
       handleMazeMove(modal, state, dx, dy);
