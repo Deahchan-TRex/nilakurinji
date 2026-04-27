@@ -4909,7 +4909,7 @@ function showMsgLogAudit() {
 
   document.getElementById('msg-audit-close').addEventListener('click', () => modal.remove());
 
-  // 복원: 누락 항목을 pendingQuestions에 수동 추가
+  // 복원: 누락 항목을 pendingQuestions에 수동 추가 (질문만 또는 질문+답변 함께)
   modal.querySelectorAll('.msg-audit-restore').forEach(btn => {
     btn.addEventListener('click', async () => {
       const idx = parseInt(btn.dataset.idx);
@@ -4921,29 +4921,45 @@ function showMsgLogAudit() {
       const fullText = prompt(
         `${log.user}의 질문을 펜딩에 수동 추가합니다.\n\n` +
         `원본 텍스트 (로그 기록):\n"${logTextClean}"\n\n` +
-        `전체 질문 텍스트를 입력해주세요 (120자 이내):`,
+        `[1단계] 전체 질문 텍스트를 입력해주세요 (120자 이내):`,
         logTextClean
       );
       if (!fullText || !fullText.trim()) return;
       const text = fullText.trim().slice(0, 120);
 
+      // 답변 함께 등록 여부
+      const answerInput = prompt(
+        `[2단계] 이 질문에 이미 답한 적이 있다면 답변 내용을 입력하세요.\n` +
+        `답변 없이 미답 상태로 등록하려면 빈 칸으로 두세요.\n\n` +
+        `질문: "${text.slice(0, 50)}${text.length > 50 ? '...' : ''}"`,
+        ''
+      );
+
+      const hasAnswer = answerInput !== null && answerInput.trim() !== '';
+      const answerText = hasAnswer ? answerInput.trim().slice(0, 200) : '';
+      const answerByName = hasAnswer ? (prompt(
+        `[3단계] 답변자 이름을 입력하세요 (기본: ${currentUser.name}):`,
+        currentUser.name
+      ) || currentUser.name).trim() : '';
+
       try {
         await Backend.appendPendingQuestion({
           user: log.user,
           text,
-          at: log.atMs || Date.now(),  // 원본 시각 사용
-          answered: false,
-          answer: '',
-          answerBy: '',
-          answerAt: 0,
+          at: log.atMs || Date.now(),
+          answered: hasAnswer,
+          answer: answerText,
+          answerBy: answerByName,
+          answerAt: hasAnswer ? Date.now() : 0,
         });
         await Backend.addLog({
           user: currentUser.name, action: 'MSG',
-          text: `◎ [복원] ${log.user}의 "${text.slice(0, 30)}${text.length > 30 ? '...' : ''}" 수동 등록`,
+          text: hasAnswer
+            ? `◎ [복원+답변] ${log.user}의 "${text.slice(0, 20)}..." → ${answerByName}: "${answerText.slice(0, 20)}..."`
+            : `◎ [복원] ${log.user}의 "${text.slice(0, 30)}${text.length > 30 ? '...' : ''}" 수동 등록`,
           type: 'system',
         });
-        showToast(`${log.user}의 질문 복원 완료`, 'personality');
-        // 감사 다시 실행 (목록 갱신)
+        showToast(hasAnswer ? `${log.user}의 질문+답변 복원 완료` : `${log.user}의 질문 복원 완료`, 'personality');
         modal.remove();
         setTimeout(showMsgLogAudit, 200);
       } catch (err) {

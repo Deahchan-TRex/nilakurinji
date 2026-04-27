@@ -146,8 +146,13 @@ export const Backend = {
       const pet = raw ? JSON.parse(raw) : {};
       pet.pendingQuestions = pet.pendingQuestions || [];
       pet.pendingQuestions.push(question);
-      if (pet.pendingQuestions.length > 50) {
-        pet.pendingQuestions = pet.pendingQuestions.slice(-50);
+      // 미답 질문만 50개 제한 (답한 건 보존)
+      const unanswered = pet.pendingQuestions.filter(q => !q.answered);
+      const answered = pet.pendingQuestions.filter(q => q.answered);
+      if (unanswered.length > 50) {
+        // 가장 오래된 미답만 자름
+        const trimmedUnanswered = unanswered.slice(-50);
+        pet.pendingQuestions = [...answered, ...trimmedUnanswered];
       }
       localStorage.setItem('nk_pet', JSON.stringify(pet));
       listeners.pet.forEach(cb => cb(pet));
@@ -160,8 +165,12 @@ export const Backend = {
         const pet = snap.exists() ? snap.data() : {};
         pet.pendingQuestions = Array.isArray(pet.pendingQuestions) ? pet.pendingQuestions : [];
         pet.pendingQuestions.push(question);
-        if (pet.pendingQuestions.length > 50) {
-          pet.pendingQuestions = pet.pendingQuestions.slice(-50);
+        // 미답 질문만 50개 제한 (답한 건 영구 보존)
+        const unanswered = pet.pendingQuestions.filter(q => !q.answered);
+        const answered = pet.pendingQuestions.filter(q => q.answered);
+        if (unanswered.length > 50) {
+          const trimmedUnanswered = unanswered.slice(-50);
+          pet.pendingQuestions = [...answered, ...trimmedUnanswered];
         }
         tx.set(docRef, pet);
       });
@@ -799,9 +808,14 @@ export const Backend = {
       return () => window.removeEventListener('storage', handler);
     }
     const docRef = db._fns.doc(db, 'battles', battleId);
-    return db._fns.onSnapshot(docRef, (snap) => {
-      if (snap.exists()) callback(snap.data());
-    });
+    return db._fns.onSnapshot(docRef,
+      (snap) => {
+        if (snap.exists()) callback(snap.data());
+      },
+      (err) => {
+        console.warn('[battle] onSnapshot 에러 (구독 종료):', err.message);
+      }
+    );
   },
 
   onPetChange(callback) {
